@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BookCreate(BaseModel):
@@ -44,6 +44,7 @@ class BookResponse(BaseModel):
     description: str | None
     cover_url: str | None
     goodreads_id: str | None
+    open_library_key: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -59,3 +60,28 @@ from shelflife.schemas.shelf import ShelfResponse  # noqa: E402
 from shelflife.schemas.review import ReviewResponse  # noqa: E402
 
 BookDetail.model_rebuild()
+
+
+class EnrichResponse(BaseModel):
+    book_id: int
+    enriched: bool
+    fields_updated: list[str]
+    tags_added: list[str]
+    error: str | None = None
+
+
+class BatchEnrichRequest(BaseModel):
+    book_ids: list[int] | None = None
+    only_unenriched: bool = True
+    overwrite: bool = False
+
+
+class BatchEnrichResponse(BaseModel):
+    total: int
+    enriched: int
+    failed: int
+
+
+class MoveBookRequest(BaseModel):
+    from_shelf_id: int
+    to_shelf_id: int

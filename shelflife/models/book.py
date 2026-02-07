@@ -28,6 +28,7 @@ class Book(Base):
     description: Mapped[str | None] = mapped_column(Text)
     cover_url: Mapped[str | None] = mapped_column(String(500))
     goodreads_id: Mapped[str | None] = mapped_column(String(20), unique=True)
+    open_library_key: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 

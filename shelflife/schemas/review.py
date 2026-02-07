@@ -13,6 +13,10 @@ class ReviewUpdate(BaseModel):
     review_text: str | None = None
 
 
+class RatingUpdate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+
+
 class ReviewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -22,3 +26,8 @@ class ReviewResponse(BaseModel):
     review_text: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ReviewWithBook(ReviewResponse):
+    book_title: str
+    book_author: str

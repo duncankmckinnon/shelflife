@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from shelflife.database import get_session
 from shelflife.models import Book, Shelf, ShelfBook
-from shelflife.schemas.book import BookResponse
+from shelflife.schemas.book import BookResponse, MoveBookRequest
 from shelflife.schemas.shelf import ShelfCreate, ShelfResponse, ShelfUpdate, ShelfWithBooks
 
 router = APIRouter(prefix="/api/shelves", tags=["shelves"])
@@ -66,6 +66,58 @@ async def delete_shelf(shelf_id: int, session: AsyncSession = Depends(get_sessio
         raise HTTPException(status_code=404, detail="Shelf not found")
     await session.delete(shelf)
     await session.commit()
+
+
+@router.post("/move-book/{book_id}")
+async def move_book_between_shelves(
+    book_id: int,
+    data: MoveBookRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    book = (await session.execute(select(Book).where(Book.id == book_id))).scalar_one_or_none()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    from_shelf = (await session.execute(
+        select(Shelf).where(Shelf.id == data.from_shelf_id)
+    )).scalar_one_or_none()
+    if from_shelf is None:
+        raise HTTPException(status_code=404, detail="Source shelf not found")
+
+    to_shelf = (await session.execute(
+        select(Shelf).where(Shelf.id == data.to_shelf_id)
+    )).scalar_one_or_none()
+    if to_shelf is None:
+        raise HTTPException(status_code=404, detail="Destination shelf not found")
+
+    source_link = (await session.execute(
+        select(ShelfBook).where(
+            ShelfBook.shelf_id == data.from_shelf_id,
+            ShelfBook.book_id == book_id,
+        )
+    )).scalar_one_or_none()
+    if source_link is None:
+        raise HTTPException(status_code=404, detail="Book not on source shelf")
+
+    dest_link = (await session.execute(
+        select(ShelfBook).where(
+            ShelfBook.shelf_id == data.to_shelf_id,
+            ShelfBook.book_id == book_id,
+        )
+    )).scalar_one_or_none()
+    if dest_link is not None:
+        raise HTTPException(status_code=409, detail="Book already on destination shelf")
+
+    await session.delete(source_link)
+    new_link = ShelfBook(
+        shelf_id=data.to_shelf_id,
+        book_id=book_id,
+        date_added=source_link.date_added,
+        date_read=source_link.date_read,
+    )
+    session.add(new_link)
+    await session.commit()
+    return {"detail": f"Book moved from '{from_shelf.name}' to '{to_shelf.name}'"}
 
 
 @router.post("/{shelf_id}/books/{book_id}", status_code=201)

@@ -5,9 +5,32 @@ from sqlalchemy.orm import selectinload
 
 from shelflife.database import get_session
 from shelflife.models import Book, BookTag, ShelfBook, Tag
-from shelflife.schemas.book import BookCreate, BookDetail, BookResponse, BookUpdate
+from shelflife.schemas.book import (
+    BookCreate,
+    BookDetail,
+    BookResponse,
+    BookUpdate,
+    EnrichResponse,
+)
+from shelflife.services.enrich_service import enrich_book
 
 router = APIRouter(prefix="/api/books", tags=["books"])
+
+
+@router.get("/search", response_model=list[BookResponse])
+async def search_books(
+    title: str = Query(..., description="Title to search for (case-insensitive partial match)"),
+    limit: int = Query(20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = (
+        select(Book)
+        .where(Book.title.ilike(f"%{title}%"))
+        .order_by(Book.title)
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    return result.scalars().all()
 
 
 @router.get("", response_model=list[BookResponse])
@@ -54,13 +77,43 @@ async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
 
 @router.post("", response_model=BookResponse, status_code=201)
 async def create_book(
-    data: BookCreate, session: AsyncSession = Depends(get_session)
+    data: BookCreate,
+    enrich: bool = Query(False, description="Fetch metadata from Open Library after creating"),
+    session: AsyncSession = Depends(get_session),
 ):
     book = Book(**data.model_dump())
     session.add(book)
+    await session.flush()
+
+    if enrich:
+        await enrich_book(session, book)
+
     await session.commit()
     await session.refresh(book)
     return book
+
+
+@router.post("/{book_id}/enrich", response_model=EnrichResponse)
+async def enrich_book_endpoint(
+    book_id: int,
+    overwrite: bool = Query(False, description="Overwrite existing fields"),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    enrich_result = await enrich_book(session, book, overwrite=overwrite)
+    await session.commit()
+
+    return EnrichResponse(
+        book_id=enrich_result.book_id,
+        enriched=enrich_result.enriched,
+        fields_updated=enrich_result.fields_updated,
+        tags_added=enrich_result.tags_added,
+        error=enrich_result.error,
+    )
 
 
 @router.put("/{book_id}", response_model=BookResponse)

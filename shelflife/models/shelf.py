@@ -10,7 +10,7 @@ class ShelfBook(Base):
     __tablename__ = "shelf_books"
     __table_args__ = (UniqueConstraint("shelf_id", "book_id"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     shelf_id: Mapped[int] = mapped_column(ForeignKey("shelves.id", ondelete="CASCADE"))
     book_id: Mapped[int] = mapped_column(ForeignKey("books.id", ondelete="CASCADE"))
     date_added: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -23,7 +23,7 @@ class ShelfBook(Base):
 class Shelf(Base):
     __tablename__ = "shelves"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(String(500))
     is_exclusive: Mapped[bool] = mapped_column(Boolean, default=False)

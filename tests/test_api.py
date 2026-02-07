@@ -1,4 +1,8 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
+
+from shelflife.services.openlibrary import OpenLibraryCandidate
 
 
 @pytest.mark.asyncio
@@ -32,7 +36,7 @@ async def test_get_book_detail(client):
     detail = resp.json()
     assert detail["title"] == "1984"
     assert detail["tags"] == []
-    assert detail["reviews"] == []
+    assert detail["review"] is None
 
 
 @pytest.mark.asyncio
@@ -95,8 +99,9 @@ async def test_reviews_crud(client):
     assert resp.status_code == 201
     review_id = resp.json()["id"]
 
-    resp = await client.get(f"/api/books/{book_id}/reviews")
-    assert len(resp.json()) == 1
+    resp = await client.get(f"/api/books/{book_id}/review")
+    assert resp.status_code == 200
+    assert resp.json()["rating"] == 5
 
     resp = await client.put(f"/api/reviews/{review_id}", json={"rating": 4})
     assert resp.json()["rating"] == 4
@@ -156,9 +161,9 @@ async def test_quick_rating_creates_review(client):
     assert resp.json()["book_id"] == book_id
 
     # Verify review was created
-    resp = await client.get(f"/api/books/{book_id}/reviews")
-    assert len(resp.json()) == 1
-    assert resp.json()[0]["rating"] == 5
+    resp = await client.get(f"/api/books/{book_id}/review")
+    assert resp.status_code == 200
+    assert resp.json()["rating"] == 5
 
 
 @pytest.mark.asyncio
@@ -176,8 +181,9 @@ async def test_quick_rating_updates_existing(client):
     assert resp.json()["review_text"] == "Good"  # preserved
 
     # Still only one review
-    resp = await client.get(f"/api/books/{book_id}/reviews")
-    assert len(resp.json()) == 1
+    resp = await client.get(f"/api/books/{book_id}/review")
+    assert resp.status_code == 200
+    assert resp.json()["rating"] == 5
 
 
 @pytest.mark.asyncio
@@ -251,3 +257,319 @@ async def test_move_book_not_on_shelf(client):
     })
     assert resp.status_code == 404
     assert "not on source shelf" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_books_by_tag(client):
+    b1 = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    b2 = await client.post("/api/books", json={"title": "Neuromancer", "author": "William Gibson"})
+    await client.post("/api/books", json={"title": "Pride and Prejudice", "author": "Jane Austen"})
+
+    # Tag two books with "sci-fi"
+    tag_resp = await client.post(f"/api/books/{b1.json()['id']}/tags", json={"name": "sci-fi"})
+    tag_id = tag_resp.json()["id"]
+    await client.post(f"/api/books/{b2.json()['id']}/tags", json={"name": "sci-fi"})
+
+    # Get books by tag
+    resp = await client.get(f"/api/tags/{tag_id}/books")
+    assert resp.status_code == 200
+    books = resp.json()
+    assert len(books) == 2
+    titles = {b["title"] for b in books}
+    assert titles == {"Dune", "Neuromancer"}
+
+    # 404 for nonexistent tag
+    resp = await client.get("/api/tags/9999/books")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_tag_book(client):
+    book_resp = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    book_id = book_resp.json()["id"]
+
+    # Add multiple tags at once
+    resp = await client.post(f"/api/books/{book_id}/tags/batch", json={
+        "tags": ["sci-fi", "classic", "dystopian"],
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["created"] == 3
+    assert body["skipped"] == 0
+    assert len(body["tags"]) == 3
+    tag_names = {t["name"] for t in body["tags"]}
+    assert tag_names == {"sci-fi", "classic", "dystopian"}
+
+    # Repeat — should be idempotent
+    resp = await client.post(f"/api/books/{book_id}/tags/batch", json={
+        "tags": ["sci-fi", "classic", "dystopian"],
+    })
+    body = resp.json()
+    assert body["created"] == 0
+    assert body["skipped"] == 3
+
+    # Mix of new and existing
+    resp = await client.post(f"/api/books/{book_id}/tags/batch", json={
+        "tags": ["sci-fi", "adventure"],
+    })
+    body = resp.json()
+    assert body["created"] == 1
+    assert body["skipped"] == 1
+
+    # 404 for nonexistent book
+    resp = await client.post("/api/books/9999/tags/batch", json={"tags": ["sci-fi"]})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_tag_books(client):
+    b1 = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    b2 = await client.post("/api/books", json={"title": "1984", "author": "George Orwell"})
+    b3 = await client.post("/api/books", json={"title": "Neuromancer", "author": "William Gibson"})
+    ids = [b1.json()["id"], b2.json()["id"], b3.json()["id"]]
+
+    # Tag all three books with "sci-fi"
+    resp = await client.post("/api/tags/books/batch", json={
+        "tag": "sci-fi",
+        "book_ids": ids,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tag"]["name"] == "sci-fi"
+    assert body["tagged"] == 3
+    assert body["skipped"] == 0
+    assert body["not_found"] == []
+
+    # Repeat — idempotent
+    resp = await client.post("/api/tags/books/batch", json={
+        "tag": "sci-fi",
+        "book_ids": ids,
+    })
+    body = resp.json()
+    assert body["tagged"] == 0
+    assert body["skipped"] == 3
+
+    # Include a nonexistent book ID
+    resp = await client.post("/api/tags/books/batch", json={
+        "tag": "classic",
+        "book_ids": [ids[0], 9999],
+    })
+    body = resp.json()
+    assert body["tagged"] == 1
+    assert body["not_found"] == [9999]
+
+
+# --- Hash endpoint ---
+
+
+@pytest.mark.asyncio
+async def test_hash_endpoint(client):
+    resp = await client.get("/api/hash", params={"parts": "sci-fi"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["parts"] == ["sci-fi"]
+    assert isinstance(body["id"], int)
+
+    # Multiple parts
+    resp = await client.get("/api/hash", params={"parts": ["Dune", "Frank Herbert"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["parts"] == ["Dune", "Frank Herbert"]
+    assert isinstance(body["id"], int)
+
+
+@pytest.mark.asyncio
+async def test_hash_matches_created_ids(client):
+    # Hash endpoint should return the same ID as the created entity
+    resp = await client.get("/api/hash", params={"parts": ["Dune", "Frank Herbert"]})
+    expected_id = resp.json()["id"]
+
+    book_resp = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    assert book_resp.json()["id"] == expected_id
+
+    resp = await client.get("/api/hash", params={"parts": "sci-fi"})
+    expected_tag_id = resp.json()["id"]
+
+    tag_resp = await client.post(f"/api/books/{expected_id}/tags", json={"name": "sci-fi"})
+    assert tag_resp.json()["id"] == expected_tag_id
+
+
+# --- By-name endpoints ---
+
+
+@pytest.mark.asyncio
+async def test_get_book_by_name(client):
+    resp = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    assert resp.status_code == 201
+    book_id = resp.json()["id"]
+
+    resp = await client.get("/api/books/by-name/Dune/Frank Herbert")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == book_id
+    assert resp.json()["title"] == "Dune"
+
+
+@pytest.mark.asyncio
+async def test_get_book_by_name_not_found(client):
+    resp = await client.get("/api/books/by-name/Nonexistent/Nobody")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_books_by_tag_name(client):
+    b1 = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    b2 = await client.post("/api/books", json={"title": "Neuromancer", "author": "William Gibson"})
+
+    await client.post(f"/api/books/{b1.json()['id']}/tags", json={"name": "sci-fi"})
+    await client.post(f"/api/books/{b2.json()['id']}/tags", json={"name": "sci-fi"})
+
+    resp = await client.get("/api/tags/by-name/sci-fi/books")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+    titles = {b["title"] for b in resp.json()}
+    assert titles == {"Dune", "Neuromancer"}
+
+
+@pytest.mark.asyncio
+async def test_get_books_by_tag_name_not_found(client):
+    resp = await client.get("/api/tags/by-name/nonexistent/books")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_shelf_by_name(client):
+    resp = await client.post("/api/shelves", json={"name": "Want to Read"})
+    assert resp.status_code == 201
+    shelf_id = resp.json()["id"]
+
+    resp = await client.get("/api/shelves/by-name/Want to Read")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == shelf_id
+    assert resp.json()["name"] == "Want to Read"
+
+
+@pytest.mark.asyncio
+async def test_get_shelf_by_name_not_found(client):
+    resp = await client.get("/api/shelves/by-name/Nonexistent")
+    assert resp.status_code == 404
+
+
+# --- Lookup and resolve endpoints ---
+
+
+MOCK_CANDIDATES = [
+    OpenLibraryCandidate(
+        title="Dune",
+        author="Frank Herbert",
+        open_library_key="/works/OL893415W",
+        cover_url="https://covers.openlibrary.org/b/id/12345-L.jpg",
+        isbn="0441172717",
+        isbn13="9780441172719",
+        publisher="Ace Books",
+        year_published=1965,
+        page_count=412,
+    ),
+    OpenLibraryCandidate(
+        title="Dune Messiah",
+        author="Frank Herbert",
+        open_library_key="/works/OL893416W",
+        cover_url=None,
+        isbn=None,
+        isbn13=None,
+        publisher="Putnam",
+        year_published=1969,
+        page_count=256,
+    ),
+]
+
+
+@pytest.mark.asyncio
+async def test_lookup_book(client):
+    with patch(
+        "shelflife.routers.books.search_candidates",
+        new_callable=AsyncMock,
+        return_value=MOCK_CANDIDATES,
+    ):
+        resp = await client.get("/api/books/lookup", params={"title": "Dune", "author": "Frank Herbert"})
+    assert resp.status_code == 200
+    results = resp.json()
+    assert len(results) == 2
+    assert results[0]["title"] == "Dune"
+    assert results[0]["isbn"] == "0441172717"
+    assert results[1]["title"] == "Dune Messiah"
+
+
+@pytest.mark.asyncio
+async def test_lookup_book_no_results(client):
+    with patch(
+        "shelflife.routers.books.search_candidates",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        resp = await client.get("/api/books/lookup", params={"title": "xyznonexistent"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_book_with_resolve(client):
+    with patch(
+        "shelflife.routers.books.search_candidates",
+        new_callable=AsyncMock,
+        return_value=[MOCK_CANDIDATES[0]],
+    ):
+        resp = await client.post(
+            "/api/books?resolve=true",
+            json={"title": "dune", "author": "herbert"},
+        )
+    assert resp.status_code == 201
+    book = resp.json()
+    # Should use canonical title/author from Open Library
+    assert book["title"] == "Dune"
+    assert book["author"] == "Frank Herbert"
+    # Should fill in metadata from candidate
+    assert book["isbn"] == "0441172717"
+    assert book["isbn13"] == "9780441172719"
+    assert book["publisher"] == "Ace Books"
+    assert book["year_published"] == 1965
+    assert book["page_count"] == 412
+
+
+@pytest.mark.asyncio
+async def test_create_book_with_resolve_no_match(client):
+    with patch(
+        "shelflife.routers.books.search_candidates",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        resp = await client.post(
+            "/api/books?resolve=true",
+            json={"title": "My Unpublished Novel", "author": "Me"},
+        )
+    assert resp.status_code == 201
+    book = resp.json()
+    # Falls back to provided values
+    assert book["title"] == "My Unpublished Novel"
+    assert book["author"] == "Me"
+
+
+@pytest.mark.asyncio
+async def test_create_book_resolve_preserves_provided_fields(client):
+    with patch(
+        "shelflife.routers.books.search_candidates",
+        new_callable=AsyncMock,
+        return_value=[MOCK_CANDIDATES[0]],
+    ):
+        resp = await client.post(
+            "/api/books?resolve=true",
+            json={"title": "dune", "author": "herbert", "publisher": "My Edition"},
+        )
+    assert resp.status_code == 201
+    book = resp.json()
+    # Canonical title/author from resolve
+    assert book["title"] == "Dune"
+    assert book["author"] == "Frank Herbert"
+    # Provided publisher should NOT be overwritten
+    assert book["publisher"] == "My Edition"
+    # But missing fields should be filled
+    assert book["isbn"] == "0441172717"

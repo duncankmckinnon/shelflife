@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class OpenLibraryCandidate:
+    """A search candidate from Open Library for the lookup endpoint."""
+
+    title: str
+    author: str
+    open_library_key: str | None = None
+    cover_url: str | None = None
+    isbn: str | None = None
+    isbn13: str | None = None
+    publisher: str | None = None
+    year_published: int | None = None
+    page_count: int | None = None
+
+
+@dataclass
 class OpenLibraryMetadata:
     """Enrichment data fetched from Open Library."""
 
@@ -175,3 +190,56 @@ async def fetch_metadata(
         return await fetch_metadata_by_title_author(title, author)
 
     return None
+
+
+def _doc_to_candidate(doc: dict) -> OpenLibraryCandidate:
+    """Convert an Open Library search doc to an OpenLibraryCandidate."""
+    authors = doc.get("author_name") or []
+    isbns = doc.get("isbn") or []
+    isbn = None
+    isbn13 = None
+    for i in isbns:
+        if len(i) == 13 and isbn13 is None:
+            isbn13 = i
+        elif len(i) == 10 and isbn is None:
+            isbn = i
+        if isbn and isbn13:
+            break
+
+    cover_url = None
+    if doc.get("cover_i"):
+        cover_url = f"{OPENLIBRARY_COVERS_URL}/b/id/{doc['cover_i']}-L.jpg"
+
+    return OpenLibraryCandidate(
+        title=doc.get("title") or "",
+        author=authors[0] if authors else "",
+        open_library_key=f"/works/{doc['key']}" if doc.get("key") else None,
+        cover_url=cover_url,
+        isbn=isbn,
+        isbn13=isbn13,
+        publisher=(doc.get("publisher") or [None])[0],
+        year_published=doc.get("first_publish_year"),
+        page_count=doc.get("number_of_pages_median"),
+    )
+
+
+async def search_candidates(
+    title: str, author: str | None = None, limit: int = 5
+) -> list[OpenLibraryCandidate]:
+    """Search Open Library and return ranked candidates for the lookup endpoint."""
+    try:
+        async with httpx.AsyncClient(timeout=OPENLIBRARY_TIMEOUT) as client:
+            params: dict = {"title": title, "limit": limit}
+            if author:
+                params["author"] = author
+            resp = await client.get(
+                f"{OPENLIBRARY_BASE_URL}/search.json", params=params
+            )
+            if resp.status_code != 200:
+                return []
+
+            docs = resp.json().get("docs", [])
+            return [_doc_to_candidate(doc) for doc in docs]
+    except httpx.HTTPError as e:
+        logger.error("Open Library search error for '%s' by '%s': %s", title, author, e)
+        return []

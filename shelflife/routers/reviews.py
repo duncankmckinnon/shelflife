@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shelflife.database import get_session
+from shelflife.id import make_id
 from shelflife.models import Book, Review
 from shelflife.schemas.review import (
     RatingUpdate,
@@ -46,13 +47,16 @@ async def list_all_reviews(
     ]
 
 
-@router.get("/api/books/{book_id}/reviews", response_model=list[ReviewResponse])
-async def list_reviews(book_id: int, session: AsyncSession = Depends(get_session)):
+@router.get("/api/books/{book_id}/review", response_model=ReviewResponse)
+async def get_review(book_id: int, session: AsyncSession = Depends(get_session)):
     book = (await session.execute(select(Book).where(Book.id == book_id))).scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
     result = await session.execute(select(Review).where(Review.book_id == book_id))
-    return result.scalars().all()
+    review = result.scalar_one_or_none()
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return review
 
 
 @router.post("/api/books/{book_id}/reviews", response_model=ReviewResponse, status_code=201)
@@ -62,7 +66,12 @@ async def create_review(
     book = (await session.execute(select(Book).where(Book.id == book_id))).scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
-    review = Review(book_id=book_id, **data.model_dump())
+
+    existing = (await session.execute(select(Review).where(Review.book_id == book_id))).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Review already exists for this book")
+
+    review = Review(id=make_id(book_id), book_id=book_id, **data.model_dump())
     session.add(review)
     await session.commit()
     await session.refresh(review)
@@ -73,18 +82,15 @@ async def create_review(
 async def quick_rate(
     book_id: int, data: RatingUpdate, session: AsyncSession = Depends(get_session)
 ):
-    """Set a book's rating. Creates a review if none exists, or updates the first existing one."""
     book = (await session.execute(select(Book).where(Book.id == book_id))).scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    result = await session.execute(
-        select(Review).where(Review.book_id == book_id).order_by(Review.created_at)
-    )
+    result = await session.execute(select(Review).where(Review.book_id == book_id))
     review = result.scalar_one_or_none()
 
     if review is None:
-        review = Review(book_id=book_id, rating=data.rating)
+        review = Review(id=make_id(book_id), book_id=book_id, rating=data.rating)
         session.add(review)
     else:
         review.rating = data.rating

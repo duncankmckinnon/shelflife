@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shelflife.id import make_id
 from shelflife.models import Book, BookTag, Tag
 from shelflife.services.openlibrary import fetch_metadata
 
@@ -77,7 +78,7 @@ async def enrich_book(
         tag_result = await session.execute(select(Tag).where(Tag.name == tag_name))
         tag = tag_result.scalar_one_or_none()
         if tag is None:
-            tag = Tag(name=tag_name)
+            tag = Tag(id=make_id(tag_name), name=tag_name)
             session.add(tag)
             await session.flush()
 

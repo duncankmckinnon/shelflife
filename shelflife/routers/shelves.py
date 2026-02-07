@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from shelflife.database import get_session
+from shelflife.id import make_id
 from shelflife.models import Book, Shelf, ShelfBook
 from shelflife.schemas.book import BookResponse, MoveBookRequest
 from shelflife.schemas.shelf import ShelfCreate, ShelfResponse, ShelfUpdate, ShelfWithBooks
@@ -15,6 +16,14 @@ router = APIRouter(prefix="/api/shelves", tags=["shelves"])
 async def list_shelves(session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(Shelf).order_by(Shelf.name))
     return result.scalars().all()
+
+
+@router.get("/by-name/{shelf_name}", response_model=ShelfWithBooks)
+async def get_shelf_by_name(
+    shelf_name: str, session: AsyncSession = Depends(get_session)
+):
+    shelf_id = make_id(shelf_name)
+    return await get_shelf(shelf_id, session)
 
 
 @router.get("/{shelf_id}", response_model=ShelfWithBooks)
@@ -36,7 +45,7 @@ async def get_shelf(shelf_id: int, session: AsyncSession = Depends(get_session))
 async def create_shelf(
     data: ShelfCreate, session: AsyncSession = Depends(get_session)
 ):
-    shelf = Shelf(**data.model_dump())
+    shelf = Shelf(id=make_id(data.name), **data.model_dump())
     session.add(shelf)
     await session.commit()
     await session.refresh(shelf)
@@ -108,12 +117,15 @@ async def move_book_between_shelves(
     if dest_link is not None:
         raise HTTPException(status_code=409, detail="Book already on destination shelf")
 
+    date_added = source_link.date_added
+    date_read = source_link.date_read
     await session.delete(source_link)
     new_link = ShelfBook(
+        id=make_id(data.to_shelf_id, book_id),
         shelf_id=data.to_shelf_id,
         book_id=book_id,
-        date_added=source_link.date_added,
-        date_read=source_link.date_read,
+        date_added=date_added,
+        date_read=date_read,
     )
     session.add(new_link)
     await session.commit()
@@ -139,7 +151,7 @@ async def add_book_to_shelf(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Book already on this shelf")
 
-    link = ShelfBook(shelf_id=shelf_id, book_id=book_id)
+    link = ShelfBook(id=make_id(shelf_id, book_id), shelf_id=shelf_id, book_id=book_id)
     session.add(link)
     await session.commit()
     return {"detail": "Book added to shelf"}

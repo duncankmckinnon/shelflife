@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from shelflife.routers import books, import_export, reviews, shelves, tags
+from shelflife.routers import books, hash, import_export, reviews, shelves, tags
 
 
 def create_app() -> FastAPI:
@@ -10,6 +10,7 @@ def create_app() -> FastAPI:
     app.include_router(reviews.router)
     app.include_router(tags.router)
     app.include_router(import_export.router)
+    app.include_router(hash.router)
     return app
 
 

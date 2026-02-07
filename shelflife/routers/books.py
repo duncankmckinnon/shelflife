@@ -4,15 +4,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from shelflife.database import get_session
+from shelflife.id import make_id
 from shelflife.models import Book, BookTag, ShelfBook, Tag
 from shelflife.schemas.book import (
     BookCreate,
     BookDetail,
+    BookLookupResult,
     BookResponse,
     BookUpdate,
     EnrichResponse,
 )
 from shelflife.services.enrich_service import enrich_book
+from shelflife.services.openlibrary import search_candidates
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 
@@ -54,6 +57,37 @@ async def list_books(
     return result.scalars().all()
 
 
+@router.get("/lookup", response_model=list[BookLookupResult])
+async def lookup_book(
+    title: str = Query(..., description="Book title to search for"),
+    author: str | None = Query(None, description="Author name (optional but recommended)"),
+    limit: int = Query(5, ge=1, le=10),
+):
+    candidates = await search_candidates(title, author, limit=limit)
+    return [
+        BookLookupResult(
+            title=c.title,
+            author=c.author,
+            open_library_key=c.open_library_key,
+            cover_url=c.cover_url,
+            isbn=c.isbn,
+            isbn13=c.isbn13,
+            publisher=c.publisher,
+            year_published=c.year_published,
+            page_count=c.page_count,
+        )
+        for c in candidates
+    ]
+
+
+@router.get("/by-name/{title}/{author}", response_model=BookDetail)
+async def get_book_by_name(
+    title: str, author: str, session: AsyncSession = Depends(get_session)
+):
+    book_id = make_id(title, author)
+    return await get_book(book_id, session)
+
+
 @router.get("/{book_id}", response_model=BookDetail)
 async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
     stmt = (
@@ -61,7 +95,7 @@ async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
         .where(Book.id == book_id)
         .options(
             selectinload(Book.tags),
-            selectinload(Book.reviews),
+            selectinload(Book.review),
             selectinload(Book.shelf_links).selectinload(ShelfBook.shelf),
         )
     )
@@ -69,9 +103,9 @@ async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
     book = result.scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
-    # Build shelves from shelf_links
     book_dict = BookDetail.model_validate(book).model_dump()
     book_dict["shelves"] = [link.shelf for link in book.shelf_links]
+    book_dict["review"] = book.review
     return BookDetail(**book_dict)
 
 
@@ -79,9 +113,20 @@ async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
 async def create_book(
     data: BookCreate,
     enrich: bool = Query(False, description="Fetch metadata from Open Library after creating"),
+    resolve: bool = Query(False, description="Resolve canonical title/author from Open Library before creating"),
     session: AsyncSession = Depends(get_session),
 ):
-    book = Book(**data.model_dump())
+    if resolve:
+        candidates = await search_candidates(data.title, data.author, limit=1)
+        if candidates:
+            best = candidates[0]
+            data = data.model_copy(update={"title": best.title, "author": best.author})
+            # Fill in metadata from the candidate if not already provided
+            for field_name in ("isbn", "isbn13", "publisher", "page_count", "year_published", "cover_url"):
+                if getattr(data, field_name) is None and getattr(best, field_name) is not None:
+                    data = data.model_copy(update={field_name: getattr(best, field_name)})
+
+    book = Book(id=make_id(data.title, data.author), **data.model_dump())
     session.add(book)
     await session.flush()
 

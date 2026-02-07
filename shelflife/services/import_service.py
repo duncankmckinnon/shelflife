@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shelflife.id import make_id
 from shelflife.models import Book, Review, Shelf, ShelfBook
 from shelflife.services.goodreads import GoodreadsRow
 
@@ -23,7 +24,7 @@ async def _get_or_create_shelf(
     result = await session.execute(select(Shelf).where(Shelf.name == name))
     shelf = result.scalar_one_or_none()
     if shelf is None:
-        shelf = Shelf(name=name, is_exclusive=is_exclusive)
+        shelf = Shelf(id=make_id(name), name=name, is_exclusive=is_exclusive)
         session.add(shelf)
         await session.flush()
     return shelf
@@ -47,6 +48,7 @@ async def import_goodreads_rows(
 
         if book is None:
             book = Book(
+                id=make_id(row.title, row.author),
                 title=row.title,
                 author=row.author,
                 additional_authors=row.additional_authors,
@@ -89,6 +91,7 @@ async def import_goodreads_rows(
             )
             if existing_link.scalar_one_or_none() is None:
                 link = ShelfBook(
+                    id=make_id(shelf.id, book.id),
                     shelf_id=shelf.id,
                     book_id=book.id,
                     date_added=row.date_added,
@@ -104,6 +107,7 @@ async def import_goodreads_rows(
             )
             if existing_review.scalar_one_or_none() is None:
                 review = Review(
+                    id=make_id(book.id),
                     book_id=book.id,
                     rating=row.rating,
                     review_text=row.review_text,

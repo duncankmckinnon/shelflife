@@ -52,7 +52,7 @@ class BookResponse(BaseModel):
 class BookDetail(BookResponse):
     tags: list["TagResponse"] = []
     shelves: list["ShelfResponse"] = []
-    reviews: list["ReviewResponse"] = []
+    review: "ReviewResponse | None" = None
 
 
 from shelflife.schemas.tag import TagResponse  # noqa: E402
@@ -85,3 +85,15 @@ class BatchEnrichResponse(BaseModel):
 class MoveBookRequest(BaseModel):
     from_shelf_id: int
     to_shelf_id: int
+
+
+class BookLookupResult(BaseModel):
+    title: str
+    author: str
+    open_library_key: str | None = None
+    cover_url: str | None = None
+    isbn: str | None = None
+    isbn13: str | None = None
+    publisher: str | None = None
+    year_published: int | None = None
+    page_count: int | None = None

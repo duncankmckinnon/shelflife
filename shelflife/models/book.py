@@ -16,7 +16,7 @@ class BookTag(Base):
 class Book(Base):
     __tablename__ = "books"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     author: Mapped[str] = mapped_column(String(300), nullable=False)
     additional_authors: Mapped[str | None] = mapped_column(String(500))
@@ -32,6 +32,6 @@ class Book(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
-    reviews: Mapped[list["Review"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+    review: Mapped["Review | None"] = relationship(back_populates="book", cascade="all, delete-orphan", uselist=False)
     shelf_links: Mapped[list["ShelfBook"]] = relationship(back_populates="book", cascade="all, delete-orphan")
     tags: Mapped[list["Tag"]] = relationship(secondary="book_tags", back_populates="books")

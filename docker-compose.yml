@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - shelflife-data:/data
+    environment:
+      - SHELFLIFE_DB_PATH=/data/shelflife.db
+
+volumes:
+  shelflife-data:

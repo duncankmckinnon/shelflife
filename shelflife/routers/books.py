@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -126,7 +127,12 @@ async def create_book(
                 if getattr(data, field_name) is None and getattr(best, field_name) is not None:
                     data = data.model_copy(update={field_name: getattr(best, field_name)})
 
-    book = Book(id=make_id(data.title, data.author), **data.model_dump())
+    book_id = make_id(data.title, data.author)
+    existing = await session.get(Book, book_id)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Book already exists")
+
+    book = Book(id=book_id, **data.model_dump())
     session.add(book)
     await session.flush()
 

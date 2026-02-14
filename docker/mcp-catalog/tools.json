@@ -1,0 +1,98 @@
+[
+  {
+    "name": "search_books",
+    "description": "Search your book library by title, author, tag, or free text query.",
+    "arguments": {
+      "query": {"type": "string", "description": "Free text search on title", "required": false},
+      "author": {"type": "string", "description": "Filter by author name (partial match)", "required": false},
+      "tag": {"type": "string", "description": "Filter by tag name", "required": false},
+      "limit": {"type": "integer", "description": "Max results (default 50)", "required": false}
+    }
+  },
+  {
+    "name": "get_book",
+    "description": "Get full details for a book including tags, shelves, and review.",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true}
+    }
+  },
+  {
+    "name": "add_book",
+    "description": "Add a book to the library. Resolves against Open Library for canonical metadata, enriches with description/cover/subject tags. Optionally place on a shelf.",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true},
+      "shelf": {"type": "string", "description": "Shelf to place book on (created if needed)", "required": false}
+    }
+  },
+  {
+    "name": "resolve_book",
+    "description": "Enrich an existing book by matching it against Open Library for metadata, cover art, and subject tags.",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true}
+    }
+  },
+  {
+    "name": "shelve_book",
+    "description": "Put a book on a shelf (e.g. 'to-read', 'currently-reading', 'read'). Creates the shelf if it doesn't exist.",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true},
+      "shelf": {"type": "string", "description": "Shelf name", "required": true}
+    }
+  },
+  {
+    "name": "browse_shelf",
+    "description": "List all shelves (no argument) or get books on a specific shelf.",
+    "arguments": {
+      "shelf_name": {"type": "string", "description": "Shelf name to browse (omit to list all)", "required": false}
+    }
+  },
+  {
+    "name": "review_book",
+    "description": "Rate and/or review a book. Creates a new review or updates existing one. Rating is 1-5.",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true},
+      "rating": {"type": "integer", "description": "Rating 1-5", "required": false},
+      "review_text": {"type": "string", "description": "Review text", "required": false}
+    }
+  },
+  {
+    "name": "get_reviews",
+    "description": "List book reviews, optionally filtered by minimum rating.",
+    "arguments": {
+      "min_rating": {"type": "integer", "description": "Minimum rating filter (1-5)", "required": false},
+      "limit": {"type": "integer", "description": "Max results (default 50)", "required": false}
+    }
+  },
+  {
+    "name": "tag_books",
+    "description": "Apply a tag to one or more books. Each book needs 'title' and 'author' fields. Reports which were tagged and which were not found.",
+    "arguments": {
+      "tag": {"type": "string", "description": "Tag name to apply", "required": true},
+      "books": {"type": "array", "description": "List of {title, author} objects", "required": true}
+    }
+  },
+  {
+    "name": "browse_tag",
+    "description": "List all tags (no argument) or get books with a specific tag.",
+    "arguments": {
+      "tag_name": {"type": "string", "description": "Tag name to browse (omit to list all)", "required": false}
+    }
+  },
+  {
+    "name": "reading_profile",
+    "description": "Get an overview of reading interests: total books, shelves, top tags, rating distribution, and recently added books.",
+    "arguments": {}
+  },
+  {
+    "name": "import_goodreads",
+    "description": "Import a Goodreads library export (CSV content as a string). Creates books, shelves, reviews from the export data.",
+    "arguments": {
+      "csv_content": {"type": "string", "description": "Goodreads CSV export content", "required": true}
+    }
+  }
+]

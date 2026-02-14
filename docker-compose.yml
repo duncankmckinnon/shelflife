@@ -4,9 +4,20 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - shelflife-data:/data
+      - shelflife-data:/app/data
     environment:
-      - SHELFLIFE_DB_PATH=/data/shelflife.db
+      - SHELFLIFE_DB_PATH=/app/data/shelflife.db
+
+  mcp:
+    build:
+      context: .
+      args:
+        MODE: mcp
+    volumes:
+      - shelflife-data:/app/data
+    environment:
+      - SHELFLIFE_DB_PATH=/app/data/shelflife.db
+    stdin_open: true
 
 volumes:
   shelflife-data:

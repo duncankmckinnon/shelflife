@@ -13,7 +13,7 @@ Goodreads hasn't meaningfully changed in years. Your reading data is locked insi
 - **Easy import** from Goodreads CSV exports (idempotent — safe to re-run)
 - **Automatic enrichment** via Open Library for descriptions, covers, and subjects
 - **Simple deployment** via Docker with persistent storage
-- **AI-ready architecture** with a planned MCP server for Claude integration
+- **Claude integration** via MCP server — manage your library through natural conversation
 
 ## Quickstart
 
@@ -40,6 +40,73 @@ uv run uvicorn shelflife.app:app --reload
 ```bash
 uv run pytest
 ```
+
+## MCP Server (Claude integration)
+
+Shelflife includes an MCP server that lets Claude manage your reading library through natural conversation — adding books, organizing shelves, writing reviews, tagging, and more.
+
+### With Docker (recommended)
+
+Build the image:
+
+```bash
+docker build -t shelflife-mcp --build-arg MODE=mcp .
+```
+
+Add to your Claude config:
+
+**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "shelflife": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "shelflife-data:/app/data",
+        "-e", "SHELFLIFE_DB_PATH=/app/data/shelflife.db",
+        "shelflife-mcp"
+      ]
+    }
+  }
+}
+```
+
+**Claude Code** — add `.mcp.json` to the project root:
+
+```json
+{
+  "mcpServers": {
+    "shelflife": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "shelflife-data:/app/data",
+        "-e", "SHELFLIFE_DB_PATH=/app/data/shelflife.db",
+        "shelflife-mcp"
+      ]
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `search_books` | Search by title, author, tag, or free text |
+| `get_book` | Get full details including tags, shelves, and review |
+| `add_book` | Add a book (auto-enriches from Open Library) |
+| `resolve_book` | Enrich an existing book with Open Library metadata |
+| `shelve_book` | Place a book on a shelf (creates shelf if needed) |
+| `browse_shelf` | List all shelves or browse a specific shelf |
+| `review_book` | Rate and/or review a book (1-5 stars) |
+| `get_reviews` | List reviews, optionally filtered by rating |
+| `tag_books` | Apply a tag to one or more books |
+| `browse_tag` | List all tags or get books with a specific tag |
+| `reading_profile` | Overview of your reading: stats, top tags, ratings |
+| `import_goodreads` | Import a Goodreads CSV export |
 
 ## Importing from Goodreads
 
@@ -102,6 +169,7 @@ All endpoints are documented via OpenAPI at `/docs`. Here's the overview:
 | Migrations | Alembic | Schema versioning with timestamp-based naming |
 | Validation | Pydantic v2 | Native FastAPI integration, strict type checking |
 | HTTP client | httpx | Async requests to Open Library API |
+| MCP server | FastMCP | Stdio transport, wraps the API in-process via ASGI |
 | Containerization | Docker Compose | Single container, persistent volume for the database |
 
 ## Roadmap
@@ -121,9 +189,9 @@ Shelflife is built in phases.
 - Book search by title, quick rating, global reviews list
 - Move books between shelves
 
-### Phase 3: AI Integration
-- MCP server exposing tools for Claude: add books, write reviews, manage shelves, get reading stats
-- Reading statistics and recommendations
+### Phase 3: AI Integration (done)
+- MCP server with 12 tools for Claude: search, add, shelve, review, tag, import, and reading profile
+- Docker packaging with stdio transport for Claude Desktop and Claude Code
 
 ### Phase 4: Website API
 - Public-facing read-only endpoints for personal websites
@@ -140,13 +208,14 @@ shelflife/
 │   ├── models/                 # ORM models (book, shelf, review, tag)
 │   ├── schemas/                # Pydantic request/response schemas
 │   ├── routers/                # API route handlers
-│   └── services/
-│       ├── goodreads.py        # Goodreads CSV parser
-│       ├── import_service.py   # Import orchestration
-│       ├── openlibrary.py      # Open Library API client
-│       └── enrich_service.py   # Enrichment orchestration
+│   ├── services/
+│   │   ├── goodreads.py        # Goodreads CSV parser
+│   │   ├── import_service.py   # Import orchestration
+│   │   ├── openlibrary.py      # Open Library API client
+│   │   └── enrich_service.py   # Enrichment orchestration
+│   └── mcp/
 ├── alembic/                    # Database migrations
-├── tests/                      # pytest suite (44 tests)
+├── tests/                      # pytest suite (88 tests)
 ├── Dockerfile
 ├── docker-compose.yml
 └── docs/

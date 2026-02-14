@@ -151,6 +151,16 @@ async def add_book_to_shelf(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Book already on this shelf")
 
+    # Enforce exclusive shelf: remove book from other exclusive shelves
+    if shelf.is_exclusive:
+        exclusive_links = (await session.execute(
+            select(ShelfBook)
+            .join(Shelf, ShelfBook.shelf_id == Shelf.id)
+            .where(ShelfBook.book_id == book_id, Shelf.is_exclusive.is_(True))
+        )).scalars().all()
+        for link in exclusive_links:
+            await session.delete(link)
+
     link = ShelfBook(id=make_id(shelf_id, book_id), shelf_id=shelf_id, book_id=book_id)
     session.add(link)
     await session.commit()

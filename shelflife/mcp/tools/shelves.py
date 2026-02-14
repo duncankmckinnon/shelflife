@@ -2,6 +2,9 @@ from shelflife.id import make_id
 from shelflife.mcp.client import ShelflifeClient
 
 
+EXCLUSIVE_SHELF_NAMES = {"read", "currently-reading", "to-read"}
+
+
 async def shelve_book(
     client: ShelflifeClient,
     title: str,
@@ -14,7 +17,8 @@ async def shelve_book(
     # Create shelf if it doesn't exist
     shelf_resp = await client.get(f"/api/shelves/{shelf_id}")
     if isinstance(shelf_resp, dict) and shelf_resp.get("error"):
-        await client.post("/api/shelves", json={"name": shelf})
+        is_exclusive = shelf.lower() in EXCLUSIVE_SHELF_NAMES
+        await client.post("/api/shelves", json={"name": shelf, "is_exclusive": is_exclusive})
 
     return await client.post(f"/api/shelves/{shelf_id}/books/{book_id}")
 

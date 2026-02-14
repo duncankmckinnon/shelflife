@@ -554,6 +554,57 @@ async def test_create_book_with_resolve_no_match(client):
 
 
 @pytest.mark.asyncio
+async def test_exclusive_shelf_removes_from_other_exclusive(client):
+    """Adding a book to an exclusive shelf should remove it from other exclusive shelves."""
+    book_resp = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    book_id = book_resp.json()["id"]
+
+    shelf1 = await client.post("/api/shelves", json={"name": "to-read", "is_exclusive": True})
+    shelf1_id = shelf1.json()["id"]
+
+    shelf2 = await client.post("/api/shelves", json={"name": "currently-reading", "is_exclusive": True})
+    shelf2_id = shelf2.json()["id"]
+
+    # Add book to first exclusive shelf
+    await client.post(f"/api/shelves/{shelf1_id}/books/{book_id}")
+
+    # Add book to second exclusive shelf — should auto-remove from first
+    resp = await client.post(f"/api/shelves/{shelf2_id}/books/{book_id}")
+    assert resp.status_code == 201
+
+    # Book should NOT be on the first shelf anymore
+    resp = await client.get(f"/api/shelves/{shelf1_id}")
+    assert len(resp.json()["books"]) == 0
+
+    # Book SHOULD be on the second shelf
+    resp = await client.get(f"/api/shelves/{shelf2_id}")
+    assert len(resp.json()["books"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_non_exclusive_shelves_allow_multiple(client):
+    """Non-exclusive shelves should allow a book on multiple shelves simultaneously."""
+    book_resp = await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    book_id = book_resp.json()["id"]
+
+    shelf1 = await client.post("/api/shelves", json={"name": "sci-fi", "is_exclusive": False})
+    shelf1_id = shelf1.json()["id"]
+
+    shelf2 = await client.post("/api/shelves", json={"name": "favorites", "is_exclusive": False})
+    shelf2_id = shelf2.json()["id"]
+
+    await client.post(f"/api/shelves/{shelf1_id}/books/{book_id}")
+    await client.post(f"/api/shelves/{shelf2_id}/books/{book_id}")
+
+    # Book should be on BOTH shelves
+    resp = await client.get(f"/api/shelves/{shelf1_id}")
+    assert len(resp.json()["books"]) == 1
+
+    resp = await client.get(f"/api/shelves/{shelf2_id}")
+    assert len(resp.json()["books"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_create_book_resolve_preserves_provided_fields(client):
     with patch(
         "shelflife.routers.books.search_candidates",

@@ -129,9 +129,10 @@
   },
   {
     "name": "import_goodreads",
-    "description": "Import a Goodreads library export (CSV content as a string). Creates books, shelves, reviews from the export data.",
+    "description": "Import a Goodreads library export. Provide either a file path to the CSV on disk, or CSV content as a string. Creates books, shelves, reviews, and reading dates from the export data.",
     "arguments": {
-      "csv_content": {"type": "string", "description": "Goodreads CSV export content", "required": true}
+      "file_path": {"type": "string", "description": "Path to the Goodreads CSV file on disk", "required": false},
+      "csv_content": {"type": "string", "description": "Goodreads CSV export content as a string", "required": false}
     }
   }
 ]

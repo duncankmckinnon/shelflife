@@ -1,6 +1,23 @@
-# Shelflife
+<p align="center">
+  <img src="docs/imgs/shelflife_logo2.png" alt="Shelflife" width="320" />
+</p>
 
-A self-hosted personal book management system — an alternative to Goodreads that you own and control.
+<h1 align="center">
+  <img src="docs/imgs/shelflife_name.png" alt="Shelflife" width="280" />
+</h1>
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" /></a>
+  <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=uv&logoColor=white" alt="uv" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI" /></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-database-003B57?logo=sqlite&logoColor=white" alt="SQLite" /></a>
+  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-server-blueviolet" alt="MCP Server" /></a>
+  <a href="https://github.com/duncankmckinnon/shelflife/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
+</p>
+
+<p align="center">
+  A self-hosted personal book management system — an alternative to Goodreads that you own and control.
+</p>
 
 Shelflife stores your books, shelves, reviews, and tags in a local SQLite database and exposes a REST API for consumption by personal websites, apps, and AI assistants. Import your existing Goodreads library with a single CSV upload, then enrich your books with metadata from Open Library.
 

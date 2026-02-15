@@ -41,11 +41,19 @@ async def import_goodreads_rows(
         if not row.goodreads_id or not row.title:
             continue
 
-        # Upsert book by goodreads_id
+        # Upsert book: check by goodreads_id first, then by deterministic id
         existing = await session.execute(
             select(Book).where(Book.goodreads_id == row.goodreads_id)
         )
         book = existing.scalar_one_or_none()
+
+        if book is None:
+            # Book may exist without a goodreads_id (e.g. added via add_book)
+            book_id = make_id(row.title, row.author)
+            existing_by_id = await session.execute(
+                select(Book).where(Book.id == book_id)
+            )
+            book = existing_by_id.scalar_one_or_none()
 
         if book is None:
             book = Book(
@@ -72,6 +80,8 @@ async def import_goodreads_rows(
             book.publisher = row.publisher
             book.page_count = row.page_count
             book.year_published = row.year_published
+            if not book.goodreads_id:
+                book.goodreads_id = row.goodreads_id
             result.books_updated += 1
 
         # Create shelves and associations

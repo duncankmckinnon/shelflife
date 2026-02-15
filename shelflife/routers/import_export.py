@@ -25,6 +25,7 @@ async def import_goodreads(
         "books_updated": result.books_updated,
         "shelves_created": result.shelves_created,
         "reviews_created": result.reviews_created,
+        "readings_created": result.readings_created,
     }
 
     if enrich:

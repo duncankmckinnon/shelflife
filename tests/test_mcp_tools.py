@@ -11,7 +11,7 @@ from shelflife.mcp.tools.shelves import shelve_book, browse_shelf
 from shelflife.mcp.tools.reviews import review_book, get_reviews
 from shelflife.mcp.tools.tags import tag_books, browse_tag
 from shelflife.mcp.tools.profile import reading_profile
-from shelflife.mcp.tools.importing import import_goodreads
+from shelflife.mcp.tools.importing import import_goodreads, import_goodreads_csv
 
 
 @pytest.fixture
@@ -265,7 +265,7 @@ SAMPLE_CSV = """Book Id,Title,Author,Author l-f,Additional Authors,ISBN,ISBN13,M
 
 @pytest.mark.asyncio
 async def test_import_goodreads(sl):
-    result = await import_goodreads(sl, csv_content=SAMPLE_CSV)
+    result = await import_goodreads_csv(sl, csv_content=SAMPLE_CSV)
     assert result["books_created"] == 1
     # Verify the book exists
     books = await sl.get("/api/books")

@@ -13,7 +13,7 @@ from shelflife.mcp.tools.reading import (
     log_reading_progress as _log_reading_progress,
     get_reading_history as _get_reading_history,
 )
-from shelflife.mcp.tools.importing import import_goodreads as _import_goodreads
+from shelflife.mcp.tools.importing import import_goodreads as _import_goodreads, import_goodreads_csv as _import_goodreads_csv
 
 
 def create_mcp_server(client: ShelflifeClient) -> FastMCP:
@@ -137,13 +137,15 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         return await _get_reading_history(client, title=title, author=author)
 
     @mcp.tool()
-    async def import_goodreads(
-        file_path: str | None = None,
-        csv_content: str | None = None,
-    ) -> dict:
-        """Import a Goodreads library export. Provide either a file_path to the
-        CSV on disk, or csv_content as a string. Creates books, shelves, reviews,
-        and reading dates from the export data."""
-        return await _import_goodreads(client, file_path=file_path, csv_content=csv_content)
+    async def import_goodreads(file_path: str) -> dict:
+        """Import a Goodreads library export from a CSV file on disk.
+        Creates books, shelves, reviews, and reading dates from the export."""
+        return await _import_goodreads(client, file_path=file_path)
+
+    @mcp.tool()
+    async def import_goodreads_csv(csv_content: str) -> dict:
+        """Import a Goodreads library export from raw CSV content as a string.
+        Creates books, shelves, reviews, and reading dates from the export."""
+        return await _import_goodreads_csv(client, csv_content=csv_content)
 
     return mcp

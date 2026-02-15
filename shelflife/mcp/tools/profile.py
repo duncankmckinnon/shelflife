@@ -3,10 +3,31 @@ from collections import Counter
 from shelflife.mcp.client import ShelflifeClient
 
 
+async def _fetch_all_reviews(client: ShelflifeClient) -> list[dict]:
+    """Paginate through all reviews (API caps at 200 per request)."""
+    all_reviews: list[dict] = []
+    offset = 0
+    while True:
+        batch = await client.get("/api/reviews", params={"limit": 200, "offset": offset})
+        if isinstance(batch, dict) and batch.get("error"):
+            break
+        if not batch:
+            break
+        all_reviews.extend(batch)
+        if len(batch) < 200:
+            break
+        offset += 200
+    return all_reviews
+
+
 async def reading_profile(client: ShelflifeClient) -> dict:
-    books = await client.get("/api/books", params={"limit": 200})
-    if isinstance(books, dict) and books.get("error"):
-        books = []
+    stats = await client.get("/api/books/stats")
+    total_books = stats.get("total_books", 0) if isinstance(stats, dict) else 0
+
+    # Recent books (most recently added)
+    recent = await client.get("/api/books", params={"limit": 5, "sort": "created_at", "order": "desc"})
+    if isinstance(recent, dict) and recent.get("error"):
+        recent = []
 
     shelves = await client.get("/api/shelves")
     if isinstance(shelves, dict) and shelves.get("error"):
@@ -16,9 +37,7 @@ async def reading_profile(client: ShelflifeClient) -> dict:
     if isinstance(tags, dict) and tags.get("error"):
         tags = []
 
-    reviews = await client.get("/api/reviews", params={"limit": 200})
-    if isinstance(reviews, dict) and reviews.get("error"):
-        reviews = []
+    reviews = await _fetch_all_reviews(client)
 
     # Rating distribution
     rating_dist = Counter()
@@ -38,12 +57,13 @@ async def reading_profile(client: ShelflifeClient) -> dict:
     shelf_summaries = [{"name": s["name"], "id": s["id"]} for s in shelves]
 
     return {
-        "total_books": len(books),
+        "total_books": total_books,
+        "total_reviews": len(reviews),
         "shelves": shelf_summaries,
         "top_tags": tag_counts[:10],
         "rating_distribution": dict(rating_dist),
         "recent_books": [
             {"title": b["title"], "author": b["author"]}
-            for b in sorted(books, key=lambda x: x["created_at"], reverse=True)[:5]
+            for b in recent[:5]
         ],
     }

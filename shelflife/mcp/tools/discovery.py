@@ -7,8 +7,9 @@ async def search_books(
     author: str | None = None,
     tag: str | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[dict]:
-    params = {"limit": limit}
+    params = {"limit": limit, "offset": offset}
     if query:
         params["q"] = query
     if author:

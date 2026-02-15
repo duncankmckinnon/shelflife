@@ -1,5 +1,7 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -19,6 +21,12 @@ from shelflife.services.enrich_service import enrich_book
 from shelflife.services.openlibrary import search_candidates
 
 router = APIRouter(prefix="/api/books", tags=["books"])
+
+
+@router.get("/stats")
+async def book_stats(session: AsyncSession = Depends(get_session)):
+    total = (await session.execute(select(func.count(Book.id)))).scalar()
+    return {"total_books": total}
 
 
 @router.get("/search", response_model=list[BookResponse])
@@ -42,6 +50,8 @@ async def list_books(
     author: str | None = None,
     tag: str | None = None,
     q: str | None = None,
+    sort: Literal["title", "author", "created_at"] = "title",
+    order: Literal["asc", "desc"] = "asc",
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -53,7 +63,9 @@ async def list_books(
         stmt = stmt.where(Book.title.ilike(f"%{q}%"))
     if tag:
         stmt = stmt.join(BookTag).join(Tag).where(Tag.name == tag)
-    stmt = stmt.order_by(Book.title).offset(offset).limit(limit)
+    col = getattr(Book, sort)
+    stmt = stmt.order_by(col.desc() if order == "desc" else col.asc())
+    stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()
 

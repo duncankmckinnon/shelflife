@@ -32,8 +32,9 @@ async def get_reviews(
     client: ShelflifeClient,
     min_rating: int | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[dict]:
-    params = {"limit": limit}
+    params = {"limit": limit, "offset": offset}
     if min_rating is not None:
         params["min_rating"] = min_rating
     result = await client.get("/api/reviews", params=params)

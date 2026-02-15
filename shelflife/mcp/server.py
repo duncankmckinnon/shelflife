@@ -32,9 +32,11 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         author: str | None = None,
         tag: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[dict]:
-        """Search your book library by title, author, tag, or free text query."""
-        return await _search_books(client, query=query, author=author, tag=tag, limit=limit)
+        """Search your book library by title, author, tag, or free text query.
+        Supports pagination via limit and offset."""
+        return await _search_books(client, query=query, author=author, tag=tag, limit=limit, offset=offset)
 
     @mcp.tool()
     async def get_book(title: str, author: str) -> dict:
@@ -77,9 +79,10 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         return await _review_book(client, title=title, author=author, rating=rating, review_text=review_text)
 
     @mcp.tool()
-    async def get_reviews(min_rating: int | None = None, limit: int = 50) -> list[dict]:
-        """List book reviews, optionally filtered by minimum rating."""
-        return await _get_reviews(client, min_rating=min_rating, limit=limit)
+    async def get_reviews(min_rating: int | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
+        """List book reviews, optionally filtered by minimum rating.
+        Supports pagination via limit and offset."""
+        return await _get_reviews(client, min_rating=min_rating, limit=limit, offset=offset)
 
     @mcp.tool()
     async def tag_books(tag: str, books: list[dict]) -> dict:

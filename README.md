@@ -73,24 +73,6 @@ Add to your Claude config:
 }
 ```
 
-**Claude Code** — add `.mcp.json` to the project root:
-
-```json
-{
-  "mcpServers": {
-    "shelflife": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "shelflife-data:/app/data",
-        "-e", "SHELFLIFE_DB_PATH=/app/data/shelflife.db",
-        "shelflife-mcp"
-      ]
-    }
-  }
-}
-```
-
 ### Available tools
 
 | Tool | Description |
@@ -106,6 +88,10 @@ Add to your Claude config:
 | `tag_books` | Apply a tag to one or more books |
 | `browse_tag` | List all tags or get books with a specific tag |
 | `reading_profile` | Overview of your reading: stats, top tags, ratings |
+| `start_reading` | Start reading a book (tracks start date) |
+| `finish_reading` | Finish the active reading of a book |
+| `log_reading_progress` | Log progress by page, pages read, or page range |
+| `get_reading_history` | Get all readings of a book including re-reads |
 | `import_goodreads` | Import a Goodreads CSV export |
 
 ## Importing from Goodreads
@@ -114,8 +100,8 @@ Add to your Claude config:
 2. Upload the CSV:
 
 ```bash
-curl -X POST http://localhost:8000/api/import/goodreads \
-  -F "file=@goodreads_library_export.csv"
+curl -X POST http://*server*/api/import/goodreads \
+  -F "file=goodreads_library_export.csv"
 ```
 
 The import is idempotent: books are matched by Goodreads ID, so re-importing updates existing records rather than creating duplicates. Shelves, reviews, ratings, and tags are all preserved.
@@ -128,15 +114,15 @@ Shelflife integrates with the [Open Library API](https://openlibrary.org/develop
 
 ```bash
 # Enrich a single book
-curl -X POST http://localhost:8000/api/books/1/enrich
+curl -X POST http://*server*/api/books/1/enrich
 
 # Batch enrich all unenriched books
-curl -X POST http://localhost:8000/api/import/enrich -H 'Content-Type: application/json' -d '{}'
+curl -X POST http://*server*/api/import/enrich -H 'Content-Type: application/json' -d '{}'
 
 # Create a book with auto-enrichment
-curl -X POST 'http://localhost:8000/api/books?enrich=true' \
+curl -X POST 'http://*server*/api/books?enrich=true' \
   -H 'Content-Type: application/json' \
-  -d '{"title": "Dune", "author": "Frank Herbert", "isbn": "0441172717"}'
+  -d '{"title": "Dune", "author": "Frank Herbert"}'
 ```
 
 Enrichment looks up books by ISBN first (most reliable), then falls back to title+author search. It fills in blank fields without overwriting your data unless you pass `?overwrite=true`. Subjects from Open Library are automatically added as tags.
@@ -156,6 +142,8 @@ All endpoints are documented via OpenAPI at `/docs`. Here's the overview:
 | Reviews | `GET/POST /api/books/{id}/reviews`, `PUT/DELETE /api/reviews/{id}` | Ratings (1-5) and review text per book |
 | Quick rate | `PUT /api/books/{id}/rating` | Set a book's rating without writing a full review |
 | All reviews | `GET /api/reviews` | Browse all reviews with book context, filter by rating |
+| Reading | `POST /api/books/{id}/start-reading`, `PUT /api/books/{id}/finish-reading` | Track reading sessions with start/finish dates, supports re-reads |
+| Reading progress | `POST/GET /api/books/{id}/reading/progress` | Log progress by absolute page, pages read, or page range |
 | Tags | `GET /api/tags`, `POST/DELETE /api/books/{id}/tags/{tag_id}` | Flexible tagging system |
 | Import | `POST /api/import/goodreads` | Goodreads CSV upload (with optional `?enrich=true`) |
 | Batch enrich | `POST /api/import/enrich` | Enrich multiple books from Open Library |
@@ -171,56 +159,6 @@ All endpoints are documented via OpenAPI at `/docs`. Here's the overview:
 | HTTP client | httpx | Async requests to Open Library API |
 | MCP server | FastMCP | Stdio transport, wraps the API in-process via ASGI |
 | Containerization | Docker Compose | Single container, persistent volume for the database |
-
-## Roadmap
-
-Shelflife is built in phases.
-
-### Phase 1: Foundation (done)
-- SQLite database with books, shelves, reviews, and tags
-- Goodreads CSV import
-- Full CRUD REST API
-- Docker deployment
-
-### Phase 2: Enrichment (done)
-- Open Library API integration for covers, descriptions, and subjects
-- Automatic enrichment on book add and import
-- Batch enrichment for existing libraries
-- Book search by title, quick rating, global reviews list
-- Move books between shelves
-
-### Phase 3: AI Integration (done)
-- MCP server with 12 tools for Claude: search, add, shelve, review, tag, import, and reading profile
-- Docker packaging with stdio transport for Claude Desktop and Claude Code
-
-### Phase 4: Website API
-- Public-facing read-only endpoints for personal websites
-- "Currently reading" widget, recent reviews, shelf browsing
-
-## Project structure
-
-```
-shelflife/
-├── shelflife/
-│   ├── app.py                  # FastAPI application
-│   ├── config.py               # Settings (DB path, Open Library config)
-│   ├── database.py             # SQLAlchemy async engine + session
-│   ├── models/                 # ORM models (book, shelf, review, tag)
-│   ├── schemas/                # Pydantic request/response schemas
-│   ├── routers/                # API route handlers
-│   ├── services/
-│   │   ├── goodreads.py        # Goodreads CSV parser
-│   │   ├── import_service.py   # Import orchestration
-│   │   ├── openlibrary.py      # Open Library API client
-│   │   └── enrich_service.py   # Enrichment orchestration
-│   └── mcp/
-├── alembic/                    # Database migrations
-├── tests/                      # pytest suite (88 tests)
-├── Dockerfile
-├── docker-compose.yml
-└── docs/
-    └── architecture.md         # Detailed architecture and decisions
-```
 
 ## License
 

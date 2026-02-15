@@ -7,6 +7,12 @@ from shelflife.mcp.tools.shelves import shelve_book as _shelve_book, browse_shel
 from shelflife.mcp.tools.reviews import review_book as _review_book, get_reviews as _get_reviews
 from shelflife.mcp.tools.tags import tag_books as _tag_books, browse_tag as _browse_tag
 from shelflife.mcp.tools.profile import reading_profile as _reading_profile
+from shelflife.mcp.tools.reading import (
+    start_reading as _start_reading,
+    finish_reading as _finish_reading,
+    log_reading_progress as _log_reading_progress,
+    get_reading_history as _get_reading_history,
+)
 from shelflife.mcp.tools.importing import import_goodreads as _import_goodreads
 
 
@@ -92,6 +98,43 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         """Get an overview of reading interests: total books, shelves,
         top tags, rating distribution, and recently added books."""
         return await _reading_profile(client)
+
+    @mcp.tool()
+    async def start_reading(title: str, author: str, started_at: str | None = None) -> dict:
+        """Start reading a book. Creates a new reading entry with today's date
+        (or a custom start date in YYYY-MM-DD format)."""
+        return await _start_reading(client, title=title, author=author, started_at=started_at)
+
+    @mcp.tool()
+    async def finish_reading(title: str, author: str, finished_at: str | None = None) -> dict:
+        """Finish reading a book. Marks the active reading as complete with today's
+        date (or a custom finish date in YYYY-MM-DD format)."""
+        return await _finish_reading(client, title=title, author=author, finished_at=finished_at)
+
+    @mcp.tool()
+    async def log_reading_progress(
+        title: str,
+        author: str,
+        page: int | None = None,
+        pages_read: int | None = None,
+        start_page: int | None = None,
+        end_page: int | None = None,
+        progress_date: str | None = None,
+    ) -> dict:
+        """Log reading progress on the currently active reading of a book.
+        Specify progress as: page (absolute), pages_read (relative from last),
+        or start_page+end_page (range). Optionally set the date (YYYY-MM-DD)."""
+        return await _log_reading_progress(
+            client, title=title, author=author,
+            page=page, pages_read=pages_read,
+            start_page=start_page, end_page=end_page,
+            progress_date=progress_date,
+        )
+
+    @mcp.tool()
+    async def get_reading_history(title: str, author: str) -> list[dict]:
+        """Get all readings of a book, including re-reads, with start/finish dates."""
+        return await _get_reading_history(client, title=title, author=author)
 
     @mcp.tool()
     async def import_goodreads(csv_content: str) -> dict:

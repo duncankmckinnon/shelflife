@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shelflife.id import make_id
-from shelflife.models import Book, Review, Shelf, ShelfBook
+from shelflife.models import Book, Reading, Review, Shelf, ShelfBook
 from shelflife.services.goodreads import GoodreadsRow
 
 
@@ -16,6 +16,7 @@ class ImportResult:
     books_updated: int = 0
     shelves_created: int = 0
     reviews_created: int = 0
+    readings_created: int = 0
 
 
 async def _get_or_create_shelf(
@@ -99,6 +100,23 @@ async def import_goodreads_rows(
                 )
                 session.add(link)
                 result.shelves_created += 1
+
+        # Create reading if date_read is present
+        if row.date_read:
+            started_at = row.date_added.date() if row.date_added and row.exclusive_shelf == "read" else None
+            reading_id = make_id(book.id, str(row.date_read))
+            existing_reading = await session.execute(
+                select(Reading).where(Reading.id == reading_id)
+            )
+            if existing_reading.scalar_one_or_none() is None:
+                reading = Reading(
+                    id=reading_id,
+                    book_id=book.id,
+                    started_at=started_at,
+                    finished_at=row.date_read,
+                )
+                session.add(reading)
+                result.readings_created += 1
 
         # Create review if rated or reviewed
         if row.rating or row.review_text:

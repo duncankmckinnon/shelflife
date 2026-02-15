@@ -89,6 +89,45 @@
     "arguments": {}
   },
   {
+    "name": "start_reading",
+    "description": "Start reading a book. Creates a new reading entry with today's date (or a custom start date in YYYY-MM-DD format).",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true},
+      "started_at": {"type": "string", "description": "Start date in YYYY-MM-DD format (defaults to today)", "required": false}
+    }
+  },
+  {
+    "name": "finish_reading",
+    "description": "Finish reading a book. Marks the active reading as complete with today's date (or a custom finish date in YYYY-MM-DD format).",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true},
+      "finished_at": {"type": "string", "description": "Finish date in YYYY-MM-DD format (defaults to today)", "required": false}
+    }
+  },
+  {
+    "name": "log_reading_progress",
+    "description": "Log reading progress on the currently active reading of a book. Specify progress as: page (absolute), pages_read (relative from last), or start_page+end_page (range).",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true},
+      "page": {"type": "integer", "description": "Absolute page reached", "required": false},
+      "pages_read": {"type": "integer", "description": "Pages read since last entry", "required": false},
+      "start_page": {"type": "integer", "description": "Start page of range read", "required": false},
+      "end_page": {"type": "integer", "description": "End page of range read", "required": false},
+      "progress_date": {"type": "string", "description": "Date in YYYY-MM-DD format (defaults to today)", "required": false}
+    }
+  },
+  {
+    "name": "get_reading_history",
+    "description": "Get all readings of a book, including re-reads, with start/finish dates.",
+    "arguments": {
+      "title": {"type": "string", "description": "Book title", "required": true},
+      "author": {"type": "string", "description": "Book author", "required": true}
+    }
+  },
+  {
     "name": "import_goodreads",
     "description": "Import a Goodreads library export (CSV content as a string). Creates books, shelves, reviews from the export data.",
     "arguments": {

@@ -35,3 +35,4 @@ class Book(Base):
     review: Mapped["Review | None"] = relationship(back_populates="book", cascade="all, delete-orphan", uselist=False)
     shelf_links: Mapped[list["ShelfBook"]] = relationship(back_populates="book", cascade="all, delete-orphan")
     tags: Mapped[list["Tag"]] = relationship(secondary="book_tags", back_populates="books")
+    readings: Mapped[list["Reading"]] = relationship(back_populates="book", cascade="all, delete-orphan")

@@ -40,7 +40,7 @@ Goodreads hasn't meaningfully changed in years. Your reading data is locked insi
 docker compose up --build
 ```
 
-The API is available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs`.
+The API is available at `http://localhost:8000`.
 
 ### Local development
 
@@ -117,14 +117,15 @@ Add to your Claude config:
 ## Importing from Goodreads
 
 1. Go to [Goodreads export](https://www.goodreads.com/review/import) and click "Export Library"
-2. Upload the CSV:
+2. Start the shelflife service locally in docker (localhost:8000)
+3. Upload the CSV:
 
 ```bash
-curl -X POST http://*server*/api/import/goodreads \
+curl -X POST http://localhost:8000/api/import/goodreads \
   -F "file=goodreads_library_export.csv"
 ```
 
-The import is idempotent: books are matched by Goodreads ID, so re-importing updates existing records rather than creating duplicates. Shelves, reviews, ratings, and tags are all preserved.
+The import is idempotent: books are matched by formatting title+author, so re-importing updates existing records rather than creating duplicates. Shelves, reviews, ratings, and tags are all preserved.
 
 Add `?enrich=true` to automatically fetch descriptions, covers, and subjects from Open Library during import.
 
@@ -134,13 +135,13 @@ Shelflife integrates with the [Open Library API](https://openlibrary.org/develop
 
 ```bash
 # Enrich a single book
-curl -X POST http://*server*/api/books/1/enrich
+curl -X POST http://localhost:8000/api/books/1/enrich
 
 # Batch enrich all unenriched books
-curl -X POST http://*server*/api/import/enrich -H 'Content-Type: application/json' -d '{}'
+curl -X POST http://localhost:8000/api/import/enrich -H 'Content-Type: application/json' -d '{}'
 
 # Create a book with auto-enrichment
-curl -X POST 'http://*server*/api/books?enrich=true' \
+curl -X POST 'http://localhost:8000/api/books?enrich=true' \
   -H 'Content-Type: application/json' \
   -d '{"title": "Dune", "author": "Frank Herbert"}'
 ```

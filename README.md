@@ -64,7 +64,7 @@ Shelflife includes an MCP server that lets Claude manage your reading library th
 
 ### With Docker (recommended)
 
-Build the image:
+If you started with `docker compose up --build`, the MCP image is already built. Otherwise, build it standalone:
 
 ```bash
 docker build -t shelflife-mcp --build-arg MODE=mcp .
@@ -72,16 +72,16 @@ docker build -t shelflife-mcp --build-arg MODE=mcp .
 
 Add to your Claude config:
 
-**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**Claude Desktop** — edit your claude desktop config:
 
 ```json
 {
   "mcpServers": {
     "shelflife": {
-      "command": "docker",
+      "command": "/full/path/to/docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "shelflife-data:/app/data",
+        "-v", "shelflife_shelflife-data:/app/data",
         "-e", "SHELFLIFE_DB_PATH=/app/data/shelflife.db",
         "shelflife-mcp"
       ]
@@ -90,18 +90,20 @@ Add to your Claude config:
 }
 ```
 
+> **Note:** Claude Desktop uses a limited PATH, so `command` must be the full path to Docker (e.g. `which docker`).
+
 ### Available tools
 
 | Tool | Description |
 |------|-------------|
-| `search_books` | Search by title, author, tag, or free text |
+| `search_books` | Search by title, author, tag, or free text (paginated) |
 | `get_book` | Get full details including tags, shelves, and review |
 | `add_book` | Add a book (auto-enriches from Open Library) |
 | `resolve_book` | Enrich an existing book with Open Library metadata |
 | `shelve_book` | Place a book on a shelf (creates shelf if needed) |
 | `browse_shelf` | List all shelves or browse a specific shelf |
 | `review_book` | Rate and/or review a book (1-5 stars) |
-| `get_reviews` | List reviews, optionally filtered by rating |
+| `get_reviews` | List reviews, optionally filtered by rating (paginated) |
 | `tag_books` | Apply a tag to one or more books |
 | `browse_tag` | List all tags or get books with a specific tag |
 | `reading_profile` | Overview of your reading: stats, top tags, ratings |
@@ -109,7 +111,8 @@ Add to your Claude config:
 | `finish_reading` | Finish the active reading of a book |
 | `log_reading_progress` | Log progress by page, pages read, or page range |
 | `get_reading_history` | Get all readings of a book including re-reads |
-| `import_goodreads` | Import a Goodreads CSV export |
+| `import_goodreads` | Import a Goodreads CSV from a file path on disk |
+| `import_goodreads_csv` | Import a Goodreads CSV from raw string content |
 
 ## Importing from Goodreads
 
@@ -150,7 +153,8 @@ All endpoints are documented via OpenAPI at `/docs`. Here's the overview:
 
 | Resource | Endpoints | Description |
 |----------|-----------|-------------|
-| Books | `GET/POST /api/books`, `GET/PUT/DELETE /api/books/{id}` | Full CRUD with search, filtering by author/tag, pagination |
+| Books | `GET/POST /api/books`, `GET/PUT/DELETE /api/books/{id}` | Full CRUD with search, filtering by author/tag, pagination, sort by title/author/created_at |
+| Book stats | `GET /api/books/stats` | Total book count |
 | Book search | `GET /api/books/search?title=...` | Check if a book exists in your library by title |
 | Enrichment | `POST /api/books/{id}/enrich` | Fetch metadata from Open Library for a single book |
 | Shelves | `GET/POST /api/shelves`, `GET/PUT/DELETE /api/shelves/{id}` | Organize books into shelves (supports exclusive shelves like "read", "currently-reading") |

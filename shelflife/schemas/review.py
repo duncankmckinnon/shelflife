@@ -4,17 +4,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReviewCreate(BaseModel):
-    rating: int | None = Field(None, ge=1, le=5)
+    rating: float | None = Field(None, ge=0.0, le=5.0)
     review_text: str | None = None
 
 
 class ReviewUpdate(BaseModel):
-    rating: int | None = Field(None, ge=1, le=5)
+    rating: float | None = Field(None, ge=0.0, le=5.0)
     review_text: str | None = None
 
 
 class RatingUpdate(BaseModel):
-    rating: int = Field(ge=1, le=5)
+    rating: float = Field(ge=0.0, le=5.0)
 
 
 class ReviewResponse(BaseModel):
@@ -22,7 +22,7 @@ class ReviewResponse(BaseModel):
 
     id: int
     book_id: int
-    rating: int | None
+    rating: float | None
     review_text: str | None
     created_at: datetime
     updated_at: datetime

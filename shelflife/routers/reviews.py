@@ -18,8 +18,8 @@ router = APIRouter(tags=["reviews"])
 
 @router.get("/api/reviews", response_model=list[ReviewWithBook])
 async def list_all_reviews(
-    rating: int | None = Query(None, ge=1, le=5, description="Filter by exact rating"),
-    min_rating: int | None = Query(None, ge=1, le=5, description="Filter by minimum rating"),
+    rating: float | None = Query(None, ge=0.0, le=5.0, description="Filter by exact rating"),
+    min_rating: float | None = Query(None, ge=0.0, le=5.0, description="Filter by minimum rating"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),

@@ -1,4 +1,7 @@
+from typing import Annotated
+
 from fastmcp import FastMCP
+from pydantic import Field
 
 from shelflife.mcp.client import ShelflifeClient
 from shelflife.mcp.tools.discovery import search_books as _search_books, get_book as _get_book
@@ -31,12 +34,29 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         query: str | None = None,
         author: str | None = None,
         tag: str | None = None,
+        started_after: Annotated[str | None, Field(description="Return only books with a reading started on or after this date (YYYY-MM-DD)")] = None,
+        started_before: Annotated[str | None, Field(description="Return only books with a reading started on or before this date (YYYY-MM-DD)")] = None,
+        finished_after: Annotated[str | None, Field(description="Return only books with a reading finished on or after this date (YYYY-MM-DD)")] = None,
+        finished_before: Annotated[str | None, Field(description="Return only books with a reading finished on or before this date (YYYY-MM-DD)")] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
         """Search your book library by title, author, tag, or free text query.
+        Optionally filter by reading dates using started_after, started_before,
+        finished_after, finished_before (all in YYYY-MM-DD format).
         Supports pagination via limit and offset."""
-        return await _search_books(client, query=query, author=author, tag=tag, limit=limit, offset=offset)
+        return await _search_books(
+            client,
+            query=query,
+            author=author,
+            tag=tag,
+            started_after=started_after,
+            started_before=started_before,
+            finished_after=finished_after,
+            finished_before=finished_before,
+            limit=limit,
+            offset=offset,
+        )
 
     @mcp.tool()
     async def get_book(title: str, author: str) -> dict:
@@ -71,21 +91,28 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
     async def review_book(
         title: str,
         author: str,
-        rating: int | None = None,
+        rating: Annotated[float | None, Field(description="Star rating from 0.0 (worst) to 5.0 (best)")] = None,
         review_text: str | None = None,
     ) -> dict:
         """Rate and/or review a book. Creates a new review or updates existing one.
-        Rating is 1-5."""
+        Rating is 0.0-5.0."""
         return await _review_book(client, title=title, author=author, rating=rating, review_text=review_text)
 
     @mcp.tool()
-    async def get_reviews(min_rating: int | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def get_reviews(
+        min_rating: Annotated[float | None, Field(description="Minimum star rating to include (0.0-5.0)")] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
         """List book reviews, optionally filtered by minimum rating.
         Supports pagination via limit and offset."""
         return await _get_reviews(client, min_rating=min_rating, limit=limit, offset=offset)
 
     @mcp.tool()
-    async def tag_books(tag: str, books: list[dict]) -> dict:
+    async def tag_books(
+        tag: str,
+        books: Annotated[list[dict], Field(description="List of books to tag, each with 'title' and 'author' keys")],
+    ) -> dict:
         """Apply a tag to one or more books. Each book in the list needs
         'title' and 'author' fields. Reports which books were tagged and
         which were not found."""
@@ -103,13 +130,21 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         return await _reading_profile(client)
 
     @mcp.tool()
-    async def start_reading(title: str, author: str, started_at: str | None = None) -> dict:
+    async def start_reading(
+        title: str,
+        author: str,
+        started_at: Annotated[str | None, Field(description="Date reading began in YYYY-MM-DD format; defaults to today")] = None,
+    ) -> dict:
         """Start reading a book. Creates a new reading entry with today's date
         (or a custom start date in YYYY-MM-DD format)."""
         return await _start_reading(client, title=title, author=author, started_at=started_at)
 
     @mcp.tool()
-    async def finish_reading(title: str, author: str, finished_at: str | None = None) -> dict:
+    async def finish_reading(
+        title: str,
+        author: str,
+        finished_at: Annotated[str | None, Field(description="Date reading finished in YYYY-MM-DD format; defaults to today")] = None,
+    ) -> dict:
         """Finish reading a book. Marks the active reading as complete with today's
         date (or a custom finish date in YYYY-MM-DD format)."""
         return await _finish_reading(client, title=title, author=author, finished_at=finished_at)
@@ -118,11 +153,11 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
     async def log_reading_progress(
         title: str,
         author: str,
-        page: int | None = None,
-        pages_read: int | None = None,
-        start_page: int | None = None,
-        end_page: int | None = None,
-        progress_date: str | None = None,
+        page: Annotated[int | None, Field(description="Absolute page number reached (use this OR pages_read OR start_page+end_page)")] = None,
+        pages_read: Annotated[int | None, Field(description="Number of pages read since last entry; added to the previous page number")] = None,
+        start_page: Annotated[int | None, Field(description="Starting page of the session; use together with end_page")] = None,
+        end_page: Annotated[int | None, Field(description="Ending page of the session; use together with start_page")] = None,
+        progress_date: Annotated[str | None, Field(description="Date of this progress entry in YYYY-MM-DD format; defaults to today")] = None,
     ) -> dict:
         """Log reading progress on the currently active reading of a book.
         Specify progress as: page (absolute), pages_read (relative from last),

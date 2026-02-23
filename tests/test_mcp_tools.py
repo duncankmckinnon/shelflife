@@ -5,11 +5,15 @@ function directly."""
 import pytest
 from shelflife.id import make_id
 from shelflife.mcp.client import ShelflifeClient
-from shelflife.mcp.tools.discovery import search_books, get_book
+from shelflife.mcp.tools.discovery import search_books, get_books
+from shelflife.mcp.tools.types import BookRef
 from shelflife.mcp.tools.library import add_book, resolve_book
 from shelflife.mcp.tools.shelves import shelve_book, browse_shelf
 from shelflife.mcp.tools.reviews import review_book, get_reviews
 from shelflife.mcp.tools.tags import tag_books, browse_tag
+from shelflife.mcp.tools.reading import (
+    start_reading, finish_reading, log_reading_progress, get_reading_history
+)
 from shelflife.mcp.tools.profile import reading_profile
 from shelflife.mcp.tools.importing import import_goodreads, import_goodreads_csv
 
@@ -45,22 +49,40 @@ async def test_search_books_empty(sl):
     assert result == []
 
 
-# --- get_book ---
+# --- get_books ---
 
 @pytest.mark.asyncio
-async def test_get_book_found(sl):
+async def test_get_books_found(sl):
     await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
-    result = await get_book(sl, title="Dune", author="Frank Herbert")
-    assert result["title"] == "Dune"
-    assert "tags" in result
-    assert "review" in result
+    await sl.post("/api/books", json={"title": "1984", "author": "George Orwell"})
+    result = await get_books(sl, books=[
+        BookRef(title="Dune", author="Frank Herbert"),
+        BookRef(title="1984", author="George Orwell"),
+    ])
+    assert len(result) == 2
+    titles = {r["title"] for r in result}
+    assert titles == {"Dune", "1984"}
+    assert "tags" in result[0]
+    assert "review" in result[0]
 
 
 @pytest.mark.asyncio
-async def test_get_book_not_found(sl):
-    result = await get_book(sl, title="Nonexistent", author="Nobody")
-    assert result["error"] is True
-    assert result["status"] == 404
+async def test_get_books_partial_not_found(sl):
+    await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    result = await get_books(sl, books=[
+        BookRef(title="Dune", author="Frank Herbert"),
+        BookRef(title="Nonexistent", author="Nobody"),
+    ])
+    assert len(result) == 1
+    assert result[0]["title"] == "Dune"
+
+
+@pytest.mark.asyncio
+async def test_get_books_single(sl):
+    await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    result = await get_books(sl, books=[BookRef(title="Dune", author="Frank Herbert")])
+    assert len(result) == 1
+    assert result[0]["title"] == "Dune"
 
 
 # --- add_book ---
@@ -178,7 +200,7 @@ async def test_get_reviews(sl):
 @pytest.mark.asyncio
 async def test_tag_books_single(sl):
     await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
-    result = await tag_books(sl, tag="sci-fi", books=[{"title": "Dune", "author": "Frank Herbert"}])
+    result = await tag_books(sl, tag="sci-fi", books=[BookRef(title="Dune", author="Frank Herbert")])
     assert result["tagged"] == 1
     assert result["not_found"] == []
 
@@ -187,8 +209,8 @@ async def test_tag_books_single(sl):
 async def test_tag_books_mixed(sl):
     await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
     result = await tag_books(sl, tag="classics", books=[
-        {"title": "Dune", "author": "Frank Herbert"},
-        {"title": "Nonexistent", "author": "Nobody"},
+        BookRef(title="Dune", author="Frank Herbert"),
+        BookRef(title="Nonexistent", author="Nobody"),
     ])
     assert result["tagged"] == 1
     assert len(result["not_found"]) == 1
@@ -214,6 +236,43 @@ async def test_browse_tag_by_name(sl):
     result = await browse_tag(sl, tag_name="sci-fi")
     assert len(result) == 1
     assert result[0]["title"] == "Dune"
+
+
+# --- get_reading_history ---
+
+@pytest.mark.asyncio
+async def test_get_reading_history_bulk(sl):
+    await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    await sl.post("/api/books", json={"title": "1984", "author": "George Orwell"})
+    id1 = make_id("Dune", "Frank Herbert")
+    id2 = make_id("1984", "George Orwell")
+    await sl.post(f"/api/books/{id1}/start-reading", json={})
+    await sl.post(f"/api/books/{id2}/start-reading", json={})
+
+    result = await get_reading_history(sl, books=[
+        BookRef(title="Dune", author="Frank Herbert"),
+        BookRef(title="1984", author="George Orwell"),
+    ])
+    assert len(result) == 2
+    titles = {r["title"] for r in result}
+    assert titles == {"Dune", "1984"}
+    for entry in result:
+        assert "readings" in entry
+        assert len(entry["readings"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_reading_history_single(sl):
+    await sl.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    id1 = make_id("Dune", "Frank Herbert")
+    await sl.post(f"/api/books/{id1}/start-reading", json={})
+
+    result = await get_reading_history(sl, books=[
+        BookRef(title="Dune", author="Frank Herbert"),
+    ])
+    assert len(result) == 1
+    assert result[0]["title"] == "Dune"
+    assert len(result[0]["readings"]) == 1
 
 
 # --- reading_profile ---
@@ -253,8 +312,8 @@ async def test_reading_profile_with_data(sl):
     assert result["total_books"] == 2
     assert len(result["shelves"]) == 1
     assert result["top_tags"][0]["name"] == "sci-fi"  # 2 books
-    assert result["rating_distribution"]["5"] == 1
-    assert result["rating_distribution"]["3"] == 1
+    assert result["rating_distribution"]["5.0"] == 1
+    assert result["rating_distribution"]["3.0"] == 1
 
 
 # --- import_goodreads ---

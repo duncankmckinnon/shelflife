@@ -4,7 +4,8 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from shelflife.mcp.client import ShelflifeClient
-from shelflife.mcp.tools.discovery import search_books as _search_books, get_book as _get_book
+from shelflife.mcp.tools.discovery import search_books as _search_books, get_books as _get_books
+from shelflife.mcp.tools.types import BookRef
 from shelflife.mcp.tools.library import add_book as _add_book, resolve_book as _resolve_book
 from shelflife.mcp.tools.shelves import shelve_book as _shelve_book, browse_shelf as _browse_shelf
 from shelflife.mcp.tools.reviews import review_book as _review_book, get_reviews as _get_reviews
@@ -59,9 +60,15 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         )
 
     @mcp.tool()
-    async def get_book(title: str, author: str) -> dict:
-        """Get full details for a book including tags, shelves, and review."""
-        return await _get_book(client, title=title, author=author)
+    async def get_books(
+        books: Annotated[
+            list[BookRef],
+            Field(description="List of books to retrieve, each with 'title' and 'author'"),
+        ],
+    ) -> list[dict]:
+        """Get full details for one or more books including tags, shelves, and review.
+        Returns only the books that were found; missing entries are silently omitted."""
+        return await _get_books(client, books=books)
 
     @mcp.tool()
     async def add_book(title: str, author: str, shelf: str | None = None) -> dict:
@@ -111,10 +118,12 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
     @mcp.tool()
     async def tag_books(
         tag: str,
-        books: Annotated[list[dict], Field(description="List of books to tag, each with 'title' and 'author' keys")],
+        books: Annotated[
+            list[BookRef],
+            Field(description="List of books to tag, each with 'title' and 'author'"),
+        ],
     ) -> dict:
-        """Apply a tag to one or more books. Each book in the list needs
-        'title' and 'author' fields. Reports which books were tagged and
+        """Apply a tag to one or more books. Reports which books were tagged and
         which were not found."""
         return await _tag_books(client, tag=tag, books=books)
 
@@ -170,9 +179,15 @@ def create_mcp_server(client: ShelflifeClient) -> FastMCP:
         )
 
     @mcp.tool()
-    async def get_reading_history(title: str, author: str) -> list[dict]:
-        """Get all readings of a book, including re-reads, with start/finish dates."""
-        return await _get_reading_history(client, title=title, author=author)
+    async def get_reading_history(
+        books: Annotated[
+            list[BookRef],
+            Field(description="List of books to retrieve reading history for, each with 'title' and 'author'"),
+        ],
+    ) -> list[dict]:
+        """Get all readings (including re-reads) for one or more books, with start/finish dates.
+        Each result entry contains 'title', 'author', and a 'readings' list."""
+        return await _get_reading_history(client, books=books)
 
     @mcp.tool()
     async def import_goodreads(file_path: str) -> dict:

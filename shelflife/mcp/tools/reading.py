@@ -2,6 +2,7 @@ from datetime import date
 
 from shelflife.id import make_id
 from shelflife.mcp.client import ShelflifeClient
+from shelflife.mcp.tools.types import BookRef
 
 
 async def start_reading(
@@ -57,11 +58,12 @@ async def log_reading_progress(
 
 async def get_reading_history(
     client: ShelflifeClient,
-    title: str,
-    author: str,
+    books: list[BookRef],
 ) -> list[dict]:
-    book_id = make_id(title, author)
-    result = await client.get(f"/api/books/{book_id}/readings")
+    result = await client.post(
+        "/api/books/bulk-readings",
+        json={"books": [b.model_dump() for b in books]},
+    )
     if isinstance(result, dict) and result.get("error"):
         return []
     return result

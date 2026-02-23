@@ -16,6 +16,7 @@ from shelflife.schemas.book import (
     BookLookupResult,
     BookResponse,
     BookUpdate,
+    BulkBookRequest,
     EnrichResponse,
 )
 from shelflife.services.enrich_service import enrich_book
@@ -106,6 +107,29 @@ async def lookup_book(
         )
         for c in candidates
     ]
+
+
+@router.post("/bulk", response_model=list[BookDetail])
+async def get_books_bulk(data: BulkBookRequest, session: AsyncSession = Depends(get_session)):
+    ids = [make_id(b.title, b.author) for b in data.books]
+    stmt = (
+        select(Book)
+        .where(Book.id.in_(ids))
+        .options(
+            selectinload(Book.tags),
+            selectinload(Book.review),
+            selectinload(Book.shelf_links).selectinload(ShelfBook.shelf),
+        )
+    )
+    result = await session.execute(stmt)
+    books = result.scalars().all()
+    out = []
+    for book in books:
+        book_dict = BookDetail.model_validate(book).model_dump()
+        book_dict["shelves"] = [link.shelf for link in book.shelf_links]
+        book_dict["review"] = book.review
+        out.append(BookDetail(**book_dict))
+    return out
 
 
 @router.get("/by-name/{title}/{author}", response_model=BookDetail)

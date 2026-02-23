@@ -74,3 +74,9 @@ class ReadingProgressResponse(BaseModel):
     page: int
     date: dt.date
     created_at: dt.datetime
+
+
+class BookReadingsResponse(BaseModel):
+    title: str
+    author: str
+    readings: list[ReadingResponse]

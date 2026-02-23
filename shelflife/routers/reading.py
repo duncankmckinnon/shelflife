@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +9,9 @@ from sqlalchemy.orm import selectinload
 from shelflife.database import get_session
 from shelflife.id import make_id
 from shelflife.models import Book, Reading, ReadingProgress
+from shelflife.schemas.book import BulkBookRequest
 from shelflife.schemas.reading import (
+    BookReadingsResponse,
     FinishReadingRequest,
     ReadingDetail,
     ReadingProgressCreate,
@@ -58,6 +61,32 @@ def _resolve_page(data: ReadingProgressCreate, last_page: int) -> int:
         return last_page + data.pages_read
     # start_page + end_page range
     return data.end_page
+
+
+@router.post("/api/books/bulk-readings", response_model=list[BookReadingsResponse])
+async def get_bulk_readings(
+    data: BulkBookRequest, session: AsyncSession = Depends(get_session)
+):
+    id_to_ref = {make_id(b.title, b.author): b for b in data.books}
+    result = await session.execute(
+        select(Reading)
+        .where(Reading.book_id.in_(id_to_ref.keys()))
+        .order_by(Reading.book_id, Reading.created_at.desc())
+    )
+    readings = result.scalars().all()
+
+    grouped: dict[int, list] = defaultdict(list)
+    for r in readings:
+        grouped[r.book_id].append(ReadingResponse.model_validate(r).model_dump())
+
+    return [
+        BookReadingsResponse(
+            title=ref.title,
+            author=ref.author,
+            readings=grouped[book_id],
+        )
+        for book_id, ref in id_to_ref.items()
+    ]
 
 
 @router.post("/api/books/{book_id}/start-reading", response_model=ReadingResponse, status_code=201)

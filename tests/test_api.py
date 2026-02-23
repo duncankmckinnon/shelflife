@@ -605,6 +605,52 @@ async def test_non_exclusive_shelves_allow_multiple(client):
 
 
 @pytest.mark.asyncio
+async def test_bulk_books(client):
+    await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    await client.post("/api/books", json={"title": "1984", "author": "George Orwell"})
+
+    resp = await client.post("/api/books/bulk", json={
+        "books": [
+            {"title": "Dune", "author": "Frank Herbert"},
+            {"title": "1984", "author": "George Orwell"},
+        ]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    titles = {item["title"] for item in data}
+    assert titles == {"Dune", "1984"}
+    assert "tags" in data[0]
+    assert "review" in data[0]
+
+
+@pytest.mark.asyncio
+async def test_bulk_readings(client):
+    from shelflife.id import make_id
+    await client.post("/api/books", json={"title": "Dune", "author": "Frank Herbert"})
+    await client.post("/api/books", json={"title": "1984", "author": "George Orwell"})
+    id1 = make_id("Dune", "Frank Herbert")
+    id2 = make_id("1984", "George Orwell")
+    await client.post(f"/api/books/{id1}/start-reading", json={})
+    await client.post(f"/api/books/{id2}/start-reading", json={})
+
+    resp = await client.post("/api/books/bulk-readings", json={
+        "books": [
+            {"title": "Dune", "author": "Frank Herbert"},
+            {"title": "1984", "author": "George Orwell"},
+        ]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    titles = {item["title"] for item in data}
+    assert titles == {"Dune", "1984"}
+    for item in data:
+        assert "readings" in item
+        assert len(item["readings"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_create_book_resolve_preserves_provided_fields(client):
     with patch(
         "shelflife.routers.books.search_candidates",

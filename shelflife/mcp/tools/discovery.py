@@ -1,4 +1,5 @@
 from shelflife.mcp.client import ShelflifeClient
+from shelflife.mcp.tools.types import BookRef
 
 
 async def search_books(
@@ -34,9 +35,14 @@ async def search_books(
     return result
 
 
-async def get_book(
+async def get_books(
     client: ShelflifeClient,
-    title: str,
-    author: str,
-) -> dict:
-    return await client.get(f"/api/books/by-name/{title}/{author}")
+    books: list[BookRef],
+) -> list[dict]:
+    result = await client.post(
+        "/api/books/bulk",
+        json={"books": [b.model_dump() for b in books]},
+    )
+    if isinstance(result, dict) and result.get("error"):
+        return []
+    return result

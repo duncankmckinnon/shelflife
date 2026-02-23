@@ -87,6 +87,15 @@ class MoveBookRequest(BaseModel):
     to_shelf_id: int
 
 
+class BookIdentifier(BaseModel):
+    title: str
+    author: str
+
+
+class BulkBookRequest(BaseModel):
+    books: list[BookIdentifier]
+
+
 class BookLookupResult(BaseModel):
     title: str
     author: str

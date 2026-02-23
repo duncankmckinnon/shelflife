@@ -17,7 +17,7 @@ class GoodreadsRow:
     publisher: str | None
     page_count: int | None
     year_published: int | None
-    rating: int | None
+    rating: float | None
     review_text: str | None
     exclusive_shelf: str | None
     bookshelves: list[str]

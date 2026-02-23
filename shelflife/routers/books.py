@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from shelflife.database import get_session
 from shelflife.id import make_id
-from shelflife.models import Book, BookTag, ShelfBook, Tag
+from shelflife.models import Book, BookTag, Reading, ShelfBook, Tag
 from shelflife.schemas.book import (
     BookCreate,
     BookDetail,
@@ -50,19 +51,33 @@ async def list_books(
     author: str | None = None,
     tag: str | None = None,
     q: str | None = None,
+    started_after: date | None = Query(None, description="Filter books with a reading started on or after this date (YYYY-MM-DD)"),
+    started_before: date | None = Query(None, description="Filter books with a reading started on or before this date (YYYY-MM-DD)"),
+    finished_after: date | None = Query(None, description="Filter books with a reading finished on or after this date (YYYY-MM-DD)"),
+    finished_before: date | None = Query(None, description="Filter books with a reading finished on or before this date (YYYY-MM-DD)"),
     sort: Literal["title", "author", "created_at"] = "title",
     order: Literal["asc", "desc"] = "asc",
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Book)
+    stmt = select(Book).distinct()
     if author:
         stmt = stmt.where(Book.author.ilike(f"%{author}%"))
     if q:
         stmt = stmt.where(Book.title.ilike(f"%{q}%"))
     if tag:
         stmt = stmt.join(BookTag).join(Tag).where(Tag.name == tag)
+    if started_after or started_before or finished_after or finished_before:
+        stmt = stmt.join(Reading, Reading.book_id == Book.id)
+        if started_after:
+            stmt = stmt.where(Reading.started_at >= started_after)
+        if started_before:
+            stmt = stmt.where(Reading.started_at <= started_before)
+        if finished_after:
+            stmt = stmt.where(Reading.finished_at >= finished_after)
+        if finished_before:
+            stmt = stmt.where(Reading.finished_at <= finished_before)
     col = getattr(Book, sort)
     stmt = stmt.order_by(col.desc() if order == "desc" else col.asc())
     stmt = stmt.offset(offset).limit(limit)

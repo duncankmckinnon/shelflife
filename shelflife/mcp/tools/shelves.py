@@ -12,7 +12,8 @@ async def shelve_book(
     shelf: str,
 ) -> dict:
     book_id = make_id(title, author)
-    shelf_id = make_id(shelf)
+    me = await client.get("/api/auth/me")
+    shelf_id = make_id(me["user_id"], shelf)
 
     # Create shelf if it doesn't exist
     shelf_resp = await client.get(f"/api/shelves/{shelf_id}")

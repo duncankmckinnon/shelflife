@@ -3,5 +3,7 @@ from shelflife.models.reading import Reading, ReadingProgress
 from shelflife.models.review import Review
 from shelflife.models.shelf import Shelf, ShelfBook
 from shelflife.models.tag import Tag
+from shelflife.models.user import User
+from shelflife.models.user_book import UserBook
 
-__all__ = ["Book", "BookTag", "Reading", "ReadingProgress", "Review", "Shelf", "ShelfBook", "Tag"]
+__all__ = ["Book", "BookTag", "Reading", "ReadingProgress", "Review", "Shelf", "ShelfBook", "Tag", "User", "UserBook"]

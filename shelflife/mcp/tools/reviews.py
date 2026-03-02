@@ -10,6 +10,8 @@ async def review_book(
     review_text: str | None = None,
 ) -> dict:
     book_id = make_id(title, author)
+    me = await client.get("/api/auth/me")
+    review_id = make_id(me["user_id"], book_id)
 
     body = {}
     if rating is not None:
@@ -20,9 +22,8 @@ async def review_book(
     # Try to create a new review
     result = await client.post(f"/api/books/{book_id}/reviews", json=body)
 
-    # If 409 (already exists), update instead
+    # If 409 (already exists), update using the computed review_id
     if isinstance(result, dict) and result.get("status") == 409:
-        review_id = make_id(book_id)
         result = await client.put(f"/api/reviews/{review_id}", json=body)
 
     return result

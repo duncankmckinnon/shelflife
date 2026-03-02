@@ -20,19 +20,21 @@ class ImportResult:
 
 
 async def _get_or_create_shelf(
-    session: AsyncSession, name: str, is_exclusive: bool = False
+    session: AsyncSession, name: str, user_id: int, is_exclusive: bool = False
 ) -> Shelf:
-    result = await session.execute(select(Shelf).where(Shelf.name == name))
+    result = await session.execute(
+        select(Shelf).where(Shelf.name == name, Shelf.user_id == user_id)
+    )
     shelf = result.scalar_one_or_none()
     if shelf is None:
-        shelf = Shelf(id=make_id(name), name=name, is_exclusive=is_exclusive)
+        shelf = Shelf(id=make_id(user_id, name), name=name, user_id=user_id, is_exclusive=is_exclusive)
         session.add(shelf)
         await session.flush()
     return shelf
 
 
 async def import_goodreads_rows(
-    session: AsyncSession, rows: list[GoodreadsRow]
+    session: AsyncSession, rows: list[GoodreadsRow], user_id: int
 ) -> ImportResult:
     result = ImportResult()
     exclusive_shelf_names = {"read", "currently-reading", "to-read"}
@@ -91,7 +93,7 @@ async def import_goodreads_rows(
 
         for shelf_name in all_shelf_names:
             is_excl = shelf_name in exclusive_shelf_names
-            shelf = await _get_or_create_shelf(session, shelf_name, is_excl)
+            shelf = await _get_or_create_shelf(session, shelf_name, user_id, is_excl)
 
             # Check if association already exists
             existing_link = await session.execute(
@@ -114,7 +116,7 @@ async def import_goodreads_rows(
         # Create reading if date_read is present
         if row.date_read:
             started_at = row.date_added.date() if row.date_added and row.exclusive_shelf == "read" else None
-            reading_id = make_id(book.id, str(row.date_read))
+            reading_id = make_id(user_id, book.id, str(row.date_read))
             existing_reading = await session.execute(
                 select(Reading).where(Reading.id == reading_id)
             )
@@ -122,6 +124,7 @@ async def import_goodreads_rows(
                 reading = Reading(
                     id=reading_id,
                     book_id=book.id,
+                    user_id=user_id,
                     started_at=started_at,
                     finished_at=row.date_read,
                 )
@@ -131,12 +134,13 @@ async def import_goodreads_rows(
         # Create review if rated or reviewed
         if row.rating or row.review_text:
             existing_review = await session.execute(
-                select(Review).where(Review.book_id == book.id)
+                select(Review).where(Review.book_id == book.id, Review.user_id == user_id)
             )
             if existing_review.scalar_one_or_none() is None:
                 review = Review(
-                    id=make_id(book.id),
+                    id=make_id(user_id, book.id),
                     book_id=book.id,
+                    user_id=user_id,
                     rating=row.rating,
                     review_text=row.review_text,
                 )

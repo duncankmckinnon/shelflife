@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shelflife.auth import get_current_user
 from shelflife.database import get_session
+from shelflife.models.user import User
 from shelflife.schemas.book import BatchEnrichRequest, BatchEnrichResponse
 from shelflife.services.enrich_service import enrich_books_batch
 from shelflife.services.goodreads import parse_goodreads_csv
@@ -14,11 +16,12 @@ router = APIRouter(prefix="/api/import", tags=["import"])
 async def import_goodreads(
     file: UploadFile,
     enrich: bool = Query(False, description="Enrich imported books with Open Library metadata"),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     content = (await file.read()).decode("utf-8")
     rows = parse_goodreads_csv(content)
-    result = await import_goodreads_rows(session, rows)
+    result = await import_goodreads_rows(session, rows, user_id=current_user.id)
 
     response = {
         "books_created": result.books_created,
@@ -42,6 +45,7 @@ async def import_goodreads(
 @router.post("/enrich", response_model=BatchEnrichResponse)
 async def batch_enrich(
     data: BatchEnrichRequest = BatchEnrichRequest(),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     result = await enrich_books_batch(

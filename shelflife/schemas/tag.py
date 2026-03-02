@@ -3,6 +3,7 @@ from pydantic import BaseModel, ConfigDict
 
 class TagCreate(BaseModel):
     name: str
+    is_public: bool = False
 
 
 class TagResponse(BaseModel):
@@ -10,6 +11,7 @@ class TagResponse(BaseModel):
 
     id: int
     name: str
+    is_public: bool
 
 
 class BulkTagCreate(BaseModel):

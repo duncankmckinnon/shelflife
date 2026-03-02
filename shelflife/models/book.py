@@ -1,6 +1,7 @@
+import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shelflife.database import Base
@@ -11,12 +12,15 @@ class BookTag(Base):
 
     book_id: Mapped[int] = mapped_column(ForeignKey("books.id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    # Who applied this tag to the book (nullable for backfilled/community-applied rows)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class Book(Base):
     __tablename__ = "books"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    sync_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, unique=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     author: Mapped[str] = mapped_column(String(300), nullable=False)
     additional_authors: Mapped[str | None] = mapped_column(String(500))
@@ -29,10 +33,12 @@ class Book(Base):
     cover_url: Mapped[str | None] = mapped_column(String(500))
     goodreads_id: Mapped[str | None] = mapped_column(String(20), unique=True)
     open_library_key: Mapped[str | None] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    review: Mapped["Review | None"] = relationship(back_populates="book", cascade="all, delete-orphan", uselist=False)
+    reviews: Mapped[list["Review"]] = relationship(back_populates="book", cascade="all, delete-orphan")
     shelf_links: Mapped[list["ShelfBook"]] = relationship(back_populates="book", cascade="all, delete-orphan")
     tags: Mapped[list["Tag"]] = relationship(secondary="book_tags", back_populates="books")
     readings: Mapped[list["Reading"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+    user_books: Mapped[list["UserBook"]] = relationship(back_populates="book", cascade="all, delete-orphan")

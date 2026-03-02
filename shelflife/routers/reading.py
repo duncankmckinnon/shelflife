@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from shelflife.auth import get_current_user
 from shelflife.database import get_session
 from shelflife.id import make_id
 from shelflife.models import Book, Reading, ReadingProgress
+from shelflife.models.user import User
 from shelflife.schemas.book import BulkBookRequest
 from shelflife.schemas.reading import (
     BookReadingsResponse,
@@ -31,10 +33,15 @@ async def _get_book_or_404(session: AsyncSession, book_id: int) -> Book:
     return book
 
 
-async def _get_active_reading(session: AsyncSession, book_id: int) -> Reading:
+async def _get_active_reading(session: AsyncSession, book_id: int, user_id: int) -> Reading:
     result = await session.execute(
         select(Reading)
-        .where(Reading.book_id == book_id, Reading.finished_at.is_(None))
+        .where(
+            Reading.book_id == book_id,
+            Reading.user_id == user_id,
+            Reading.finished_at.is_(None),
+            Reading.deleted_at.is_(None),
+        )
         .order_by(Reading.created_at.desc())
     )
     reading = result.scalar_one_or_none()
@@ -59,18 +66,23 @@ def _resolve_page(data: ReadingProgressCreate, last_page: int) -> int:
         return data.page
     if data.pages_read is not None:
         return last_page + data.pages_read
-    # start_page + end_page range
     return data.end_page
 
 
 @router.post("/api/books/bulk-readings", response_model=list[BookReadingsResponse])
 async def get_bulk_readings(
-    data: BulkBookRequest, session: AsyncSession = Depends(get_session)
+    data: BulkBookRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     id_to_ref = {make_id(b.title, b.author): b for b in data.books}
     result = await session.execute(
         select(Reading)
-        .where(Reading.book_id.in_(id_to_ref.keys()))
+        .where(
+            Reading.book_id.in_(id_to_ref.keys()),
+            Reading.user_id == current_user.id,
+            Reading.deleted_at.is_(None),
+        )
         .order_by(Reading.book_id, Reading.created_at.desc())
     )
     readings = result.scalars().all()
@@ -93,18 +105,18 @@ async def get_bulk_readings(
 async def start_reading(
     book_id: int,
     data: StartReadingRequest | None = None,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
-    started = (data.started_at if data and data.started_at else date.today())
-    reading_id = make_id(book_id, str(started))
+    started = data.started_at if data and data.started_at else date.today()
+    reading_id = make_id(current_user.id, book_id, str(started))
 
-    # Check for duplicate
     existing = (await session.execute(select(Reading).where(Reading.id == reading_id))).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="A reading with this start date already exists")
 
-    reading = Reading(id=reading_id, book_id=book_id, started_at=started)
+    reading = Reading(id=reading_id, book_id=book_id, user_id=current_user.id, started_at=started)
     session.add(reading)
     await session.commit()
     await session.refresh(reading)
@@ -115,10 +127,11 @@ async def start_reading(
 async def finish_reading(
     book_id: int,
     data: FinishReadingRequest | None = None,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
-    reading = await _get_active_reading(session, book_id)
+    reading = await _get_active_reading(session, book_id, current_user.id)
     reading.finished_at = data.finished_at if data and data.finished_at else date.today()
     await session.commit()
     await session.refresh(reading)
@@ -128,11 +141,18 @@ async def finish_reading(
 @router.get("/api/books/{book_id}/readings", response_model=list[ReadingResponse])
 async def list_readings(
     book_id: int,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
     result = await session.execute(
-        select(Reading).where(Reading.book_id == book_id).order_by(Reading.created_at.desc())
+        select(Reading)
+        .where(
+            Reading.book_id == book_id,
+            Reading.user_id == current_user.id,
+            Reading.deleted_at.is_(None),
+        )
+        .order_by(Reading.created_at.desc())
     )
     return result.scalars().all()
 
@@ -141,12 +161,18 @@ async def list_readings(
 async def get_reading(
     book_id: int,
     reading_id: int,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
     result = await session.execute(
         select(Reading)
-        .where(Reading.id == reading_id, Reading.book_id == book_id)
+        .where(
+            Reading.id == reading_id,
+            Reading.book_id == book_id,
+            Reading.user_id == current_user.id,
+            Reading.deleted_at.is_(None),
+        )
         .options(selectinload(Reading.progress_entries))
     )
     reading = result.scalar_one_or_none()
@@ -160,13 +186,18 @@ async def update_reading(
     book_id: int,
     reading_id: int,
     data: ReadingUpdate,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
-    result = await session.execute(
-        select(Reading).where(Reading.id == reading_id, Reading.book_id == book_id)
-    )
-    reading = result.scalar_one_or_none()
+    reading = (await session.execute(
+        select(Reading).where(
+            Reading.id == reading_id,
+            Reading.book_id == book_id,
+            Reading.user_id == current_user.id,
+            Reading.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
     if reading is None:
         raise HTTPException(status_code=404, detail="Reading not found")
     for key, value in data.model_dump(exclude_unset=True).items():
@@ -180,13 +211,18 @@ async def update_reading(
 async def delete_reading(
     book_id: int,
     reading_id: int,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
-    result = await session.execute(
-        select(Reading).where(Reading.id == reading_id, Reading.book_id == book_id)
-    )
-    reading = result.scalar_one_or_none()
+    reading = (await session.execute(
+        select(Reading).where(
+            Reading.id == reading_id,
+            Reading.book_id == book_id,
+            Reading.user_id == current_user.id,
+            Reading.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
     if reading is None:
         raise HTTPException(status_code=404, detail="Reading not found")
     await session.delete(reading)
@@ -201,10 +237,11 @@ async def delete_reading(
 async def log_progress(
     book_id: int,
     data: ReadingProgressCreate,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
-    reading = await _get_active_reading(session, book_id)
+    reading = await _get_active_reading(session, book_id, current_user.id)
 
     progress_date = data.date if data.date else date.today()
     last_page = await _get_last_page(session, reading.id)
@@ -212,7 +249,6 @@ async def log_progress(
 
     progress_id = make_id(reading.id, str(progress_date))
 
-    # Check for duplicate date
     existing = (
         await session.execute(select(ReadingProgress).where(ReadingProgress.id == progress_id))
     ).scalar_one_or_none()
@@ -234,10 +270,11 @@ async def log_progress(
 )
 async def get_active_progress(
     book_id: int,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     await _get_book_or_404(session, book_id)
-    reading = await _get_active_reading(session, book_id)
+    reading = await _get_active_reading(session, book_id, current_user.id)
     result = await session.execute(
         select(ReadingProgress)
         .where(ReadingProgress.reading_id == reading.id)
@@ -249,12 +286,12 @@ async def get_active_progress(
 @router.delete("/api/reading/progress/{progress_id}", status_code=204)
 async def delete_progress(
     progress_id: int,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(
+    progress = (await session.execute(
         select(ReadingProgress).where(ReadingProgress.id == progress_id)
-    )
-    progress = result.scalar_one_or_none()
+    )).scalar_one_or_none()
     if progress is None:
         raise HTTPException(status_code=404, detail="Progress entry not found")
     await session.delete(progress)

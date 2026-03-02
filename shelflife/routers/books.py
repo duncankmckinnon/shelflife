@@ -7,9 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from shelflife.auth import get_current_user
 from shelflife.database import get_session
 from shelflife.id import make_id
-from shelflife.models import Book, BookTag, Reading, ShelfBook, Tag
+from shelflife.models import Book, BookTag, Reading, Review, ShelfBook, Tag
+from shelflife.models.user import User
+from shelflife.models.user_book import ensure_user_book
 from shelflife.schemas.book import (
     BookCreate,
     BookDetail,
@@ -27,7 +30,9 @@ router = APIRouter(prefix="/api/books", tags=["books"])
 
 @router.get("/stats")
 async def book_stats(session: AsyncSession = Depends(get_session)):
-    total = (await session.execute(select(func.count(Book.id)))).scalar()
+    total = (await session.execute(
+        select(func.count(Book.id)).where(Book.deleted_at.is_(None))
+    )).scalar()
     return {"total_books": total}
 
 
@@ -39,7 +44,7 @@ async def search_books(
 ):
     stmt = (
         select(Book)
-        .where(Book.title.ilike(f"%{title}%"))
+        .where(Book.title.ilike(f"%{title}%"), Book.deleted_at.is_(None))
         .order_by(Book.title)
         .limit(limit)
     )
@@ -62,7 +67,7 @@ async def list_books(
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Book).distinct()
+    stmt = select(Book).distinct().where(Book.deleted_at.is_(None))
     if author:
         stmt = stmt.where(Book.author.ilike(f"%{author}%"))
     if q:
@@ -110,44 +115,68 @@ async def lookup_book(
 
 
 @router.post("/bulk", response_model=list[BookDetail])
-async def get_books_bulk(data: BulkBookRequest, session: AsyncSession = Depends(get_session)):
+async def get_books_bulk(
+    data: BulkBookRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
     ids = [make_id(b.title, b.author) for b in data.books]
     stmt = (
         select(Book)
-        .where(Book.id.in_(ids))
+        .where(Book.id.in_(ids), Book.deleted_at.is_(None))
         .options(
             selectinload(Book.tags),
-            selectinload(Book.review),
             selectinload(Book.shelf_links).selectinload(ShelfBook.shelf),
         )
     )
     result = await session.execute(stmt)
     books = result.scalars().all()
+
+    # Fetch this user's reviews for these books in one query
+    reviews_result = await session.execute(
+        select(Review).where(
+            Review.book_id.in_(ids),
+            Review.user_id == current_user.id,
+            Review.deleted_at.is_(None),
+        )
+    )
+    review_by_book = {r.book_id: r for r in reviews_result.scalars().all()}
+
     out = []
     for book in books:
         book_dict = BookDetail.model_validate(book).model_dump()
         book_dict["shelves"] = [link.shelf for link in book.shelf_links]
-        book_dict["review"] = book.review
+        book_dict["review"] = review_by_book.get(book.id)
         out.append(BookDetail(**book_dict))
     return out
 
 
 @router.get("/by-name/{title}/{author}", response_model=BookDetail)
 async def get_book_by_name(
-    title: str, author: str, session: AsyncSession = Depends(get_session)
+    title: str,
+    author: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     book_id = make_id(title, author)
-    return await get_book(book_id, session)
+    return await _get_book_detail(book_id, current_user, session)
 
 
 @router.get("/{book_id}", response_model=BookDetail)
-async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
+async def get_book(
+    book_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    return await _get_book_detail(book_id, current_user, session)
+
+
+async def _get_book_detail(book_id: int, current_user: User, session: AsyncSession) -> BookDetail:
     stmt = (
         select(Book)
-        .where(Book.id == book_id)
+        .where(Book.id == book_id, Book.deleted_at.is_(None))
         .options(
             selectinload(Book.tags),
-            selectinload(Book.review),
             selectinload(Book.shelf_links).selectinload(ShelfBook.shelf),
         )
     )
@@ -155,9 +184,18 @@ async def get_book(book_id: int, session: AsyncSession = Depends(get_session)):
     book = result.scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
+
+    review = (await session.execute(
+        select(Review).where(
+            Review.book_id == book_id,
+            Review.user_id == current_user.id,
+            Review.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+
     book_dict = BookDetail.model_validate(book).model_dump()
     book_dict["shelves"] = [link.shelf for link in book.shelf_links]
-    book_dict["review"] = book.review
+    book_dict["review"] = review
     return BookDetail(**book_dict)
 
 
@@ -166,6 +204,7 @@ async def create_book(
     data: BookCreate,
     enrich: bool = Query(False, description="Fetch metadata from Open Library after creating"),
     resolve: bool = Query(False, description="Resolve canonical title/author from Open Library before creating"),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     if resolve:
@@ -173,7 +212,6 @@ async def create_book(
         if candidates:
             best = candidates[0]
             data = data.model_copy(update={"title": best.title, "author": best.author})
-            # Fill in metadata from the candidate if not already provided
             for field_name in ("isbn", "isbn13", "publisher", "page_count", "year_published", "cover_url"):
                 if getattr(data, field_name) is None and getattr(best, field_name) is not None:
                     data = data.model_copy(update={field_name: getattr(best, field_name)})
@@ -187,6 +225,8 @@ async def create_book(
     session.add(book)
     await session.flush()
 
+    await ensure_user_book(session, current_user.id, book_id)
+
     if enrich:
         await enrich_book(session, book)
 
@@ -199,9 +239,12 @@ async def create_book(
 async def enrich_book_endpoint(
     book_id: int,
     overwrite: bool = Query(False, description="Overwrite existing fields"),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(select(Book).where(Book.id == book_id))
+    result = await session.execute(
+        select(Book).where(Book.id == book_id, Book.deleted_at.is_(None))
+    )
     book = result.scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -220,9 +263,14 @@ async def enrich_book_endpoint(
 
 @router.put("/{book_id}", response_model=BookResponse)
 async def update_book(
-    book_id: int, data: BookUpdate, session: AsyncSession = Depends(get_session)
+    book_id: int,
+    data: BookUpdate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(select(Book).where(Book.id == book_id))
+    result = await session.execute(
+        select(Book).where(Book.id == book_id, Book.deleted_at.is_(None))
+    )
     book = result.scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -234,8 +282,14 @@ async def update_book(
 
 
 @router.delete("/{book_id}", status_code=204)
-async def delete_book(book_id: int, session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Book).where(Book.id == book_id))
+async def delete_book(
+    book_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(Book).where(Book.id == book_id, Book.deleted_at.is_(None))
+    )
     book = result.scalar_one_or_none()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")

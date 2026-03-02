@@ -19,12 +19,12 @@ async def add_book(
     book_id = result["id"]
 
     if shelf:
+        me = await client.get("/api/auth/me")
+        shelf_id = make_id(me["user_id"], shelf)
         # Create shelf if it doesn't exist
-        shelf_id = make_id(shelf)
         shelf_resp = await client.get(f"/api/shelves/{shelf_id}")
         if isinstance(shelf_resp, dict) and shelf_resp.get("error"):
             await client.post("/api/shelves", json={"name": shelf})
-            shelf_id = make_id(shelf)
         await client.post(f"/api/shelves/{shelf_id}/books/{book_id}")
 
     return result
